@@ -1,0 +1,30 @@
+<html>
+<head>
+	<style>
+		draggable-number {
+			position: absolute;
+			left: 400px;
+			width: 100px;
+			font-size: xx-large;
+		}
+	</style>
+</head>	
+<body>
+<script src="MathUtil.js"></script>
+<script src="Vector2D.js"></script>
+<script src="DragHelper.js"></script>
+<script src="DraggableNumber.js"></script>
+<script>
+	{
+		const createElementByHTML = html => {
+			const wrapper = document.createElement("div");
+			wrapper.innerHTML = html;
+			return wrapper.children[0];
+		};
+	}	
+</script>
+
+<draggable-number min="2" max="12" value="5"></draggable-number>
+
+</body>	
+</html>
