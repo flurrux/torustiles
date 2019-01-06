@@ -61,7 +61,7 @@
 				<span>scramble on start</span>
 				<div style="display: flex; align-items: center; margin-left: 30px;">
 					<label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="scramble-on-start-input">
-						<input type="checkbox" id="scramble-on-start-input" class="mdl-switch__input">
+						<input type="checkbox" id="scramble-on-start-input" class="mdl-switch__input" checked>
 					</label>
 				</div>
 			</div>
@@ -83,7 +83,7 @@
 					</select>
 				</div>
 			</div>
-			<!-- board shape -->
+			<!-- board shape 
 			<div>
 				<span>shape</span>
 				<div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label mdl-select">
@@ -92,13 +92,13 @@
 						<option value="rect">disc</option>
 					</select>
 				</div>
-			</div>
+			</div>-->
 			<!-- drag method -->
 			<div>
 				<span>dragging method</span>
 				<div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label mdl-select">
 					<select class="mdl-textfield__input" id="dragging-method-input">
-						<option selected value="carykh">carykh</option>
+						<option selected value="animate transition">animate transition</option>
 						<option value="spring and snap">spring'n'snap</option>
 					</select>
 				</div>
@@ -184,6 +184,28 @@
 
 </script>
 
+<!-- settings input -->
+<script>
+	{
+		const queryById = id => document.querySelector("#"+id);
+
+		const appSettings = {};
+		window.appSettings = appSettings;
+		appSettings.getConfig = () => {
+			return {
+				numberOfHorizontalTiles: parseInt(queryById("width-input").value),
+				numberOfVerticalTiles: parseInt(queryById("height-input").value),
+				scrambleOnStart: queryById("scramble-on-start-input").checked,
+				draggingMethod: queryById("dragging-method-input").value,
+				style: {
+					gradient: queryById("gradient-input").value,
+					labels: "letters"
+				}
+			};
+		};
+	}
+</script>
+
 <!-- ideas -->
 <script>
 	//ideas and todo:
@@ -218,6 +240,40 @@
 	{
 		const app = new EventTarget();
 		window.app = app;
+
+		let config = appSettings.getConfig();
+		app.applyConfig = (newConfig) => {
+			const oldConfig = config;
+			config = newConfig;
+
+			app.dispatchEvent(new CustomEvent("configChanged", {
+				detail: {
+					prevConfig: oldConfig,
+					newConfig: config,
+					config: config
+				}
+			}));
+
+			//gradients
+			{
+				let gradientUpdateDue = false;
+				if (oldConfig === null) {
+					gradientUpdateDue = false;
+				}
+				else {
+					const oldGradient = oldConfig.style.gradient;
+					const newGradient = newConfig.style.gradient;
+					gradientUpdateDue = newGradient !== oldGradient && newGradient !== "simple";
+				}
+				if (gradientUpdateDue) {
+					app.dispatchEvent(new CustomEvent("gradientConfigChanged", {
+						detail: {
+							gradientType: config.style.gradient
+						}
+					}));
+				}
+			}
+		};
 
 		//app state control ###
 		{
@@ -254,7 +310,7 @@
 				prevGameState = gameState;
 				const transitionEntry = getTransitionEntryByStateAndAction(gameState, transition);
 				if (!transitionEntry) {
-					console.warn("cannot make desired transition: " + transition);
+					//console.warn("cannot make desired transition: " + transition);
 					return;
 				}
 
@@ -317,10 +373,9 @@
 		//torus groundwork ###
 		let torusSpace, tileLayer, makeCoordinateValidOnTorus;
 		{
-			torusSpace = {
-				toroidalPointCount: 5,
-				poloidalPointCount: 5
-			};
+			torusSpace = new EventTarget();
+			torusSpace.toroidalPointCount = config.numberOfHorizontalTiles;
+			torusSpace.poloidalPointCount = config.numberOfVerticalTiles;
 			window.torusSpace = torusSpace;
 
 			const validateTorusSpaceCoordinates = (toroidalCoordinate, poloidalCoordinate) => {
@@ -575,24 +630,18 @@
 						}
 					}
 				};
+
+				torusSpace.addEventListener("pointCountChanged", () => tileLayer.init());
 			}
 		}
-		app.addEventListener("configChanged", e => {
-			torusSpace.toroidalPointCount = e.detail.config.numberOfHorizontalTiles;
-			torusSpace.poloidalPointCount = e.detail.config.numberOfVerticalTiles;
+		app.addEventListener("gameStateChanged", e => {
+			if (e.detail.transition === "restart"){
+				torusSpace.toroidalPointCount = config.numberOfHorizontalTiles;
+				torusSpace.poloidalPointCount = config.numberOfVerticalTiles;
+				torusSpace.dispatchEvent(new CustomEvent("pointCountChanged"));
+			}
 		});
 		tileLayer.init();
-
-
-		let config = {
-			scrambleOnStart: true,
-			toroidalPointCount: 4,
-			poloidalPointCount: 4,
-			style: {
-				gradient: "continuous"
-			}
-		};
-
 
 		//canvas, canvas sizing, ctx ###
 		let canvas, ctx, getCanvasPixelRatio, resizeCanvas;
@@ -681,7 +730,8 @@
 			const getWidth = () => torusSpace.toroidalPointCount;
 			const getHeight = () => torusSpace.poloidalPointCount;
 
-			const setCanvasSizeForRectShape = (availableWidth, availableHeight) => {
+			const setCanvasSizeForRectShape = () => {
+				const [availableWidth, availableHeight] = [canvas.parentElement.offsetWidth, canvas.parentElement.offsetHeight];
 				const availableWidthPerHeight = availableWidth / availableHeight;
 				const canvasWidthPerHeight = getWidth() / getHeight();
 				let canvasWidth, canvasHeight;
@@ -698,14 +748,13 @@
 
 				resizeCanvas(canvasWidth, canvasHeight);
 			};
-			canvas.addEventListener("needsResize", e => {
-				setCanvasSizeForRectShape(e.detail.availableWidth, e.detail.availableHeight);
-			});
+			canvas.addEventListener("needsResize", setCanvasSizeForRectShape);
+			torusSpace.addEventListener("pointCountChanged", setCanvasSizeForRectShape);
 
 			let tileSize = 0;
-			canvas.addEventListener("resized", (e) => {
-				tileSize = e.detail.canvasWidth / getWidth();
-			});
+			const updateTileSize = () => tileSize = canvas.width / (getWidth() * getCanvasPixelRatio());
+			canvas.addEventListener("resized", updateTileSize);
+			torusSpace.addEventListener("pointCountChanged", updateTileSize);
 
 			coordinateMapping = {
 				canvasToTorus: canvasPoint => {
@@ -722,6 +771,9 @@
 				tileGradientMap = new WeakMap();
 				const createRectGradientImage = (startX, startY, continuous) => {
 					const rectSize = Math.floor(tileSize * getCanvasPixelRatio());
+					if (rectSize === 0){
+						return Promise.reject("an image can not have a size of 0");
+					}
 					const getPixelAt = (x, y) => {
 						let pixelX = (startX * rectSize);
 						let pixelY = (startY * rectSize);
@@ -740,7 +792,9 @@
 					return Promise.all(tiles.map(tile => {
 						const initialPosition = tile.initialPosition;
 						const continuous = config.style.gradient === "continuous";
-						return createRectGradientImage(initialPosition.x, initialPosition.y, continuous).then(img => tileGradientMap.set(tile, img));
+						return createRectGradientImage(initialPosition.x, initialPosition.y, continuous)
+						.then(img => tileGradientMap.set(tile, img))
+						.catch(e => {})
 					}));
 				};
 				const updateImageDataAndRepaint = () => {
@@ -750,7 +804,10 @@
 						updateGradientData(tiles).then(() => requestRender());
 					}
 				};
-				canvas.addEventListener("resized", () => updateImageDataAndRepaint());
+				
+				canvas.addEventListener("resized", updateImageDataAndRepaint);
+				torusSpace.addEventListener("pointCountChanged", updateImageDataAndRepaint);
+				app.addEventListener("gradientConfigChanged", updateImageDataAndRepaint);
 			}
 			
 			//rendering ###
@@ -1125,7 +1182,6 @@
 					this._prevMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
 				}
 				onDrag(e) {
-					console.log("drag");
 					const prevMouseGridPoint = this._prevMouseGridPoint;
 					const curMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
 					if (curMouseGridPoint && prevMouseGridPoint){
@@ -1251,7 +1307,6 @@
 					makeCoordinateValidOnTorus(prevSpringSpacePointOnTorus);
 					
 					const springSpaceDelta = this._getShortestDeltaOnTorus(prevSpringSpacePointOnTorus, curSpringSpacePoint);
-					//console.log(prevSpringSpacePoint, curSpringSpacePoint, springSpaceDelta);
 					if (springSpaceDelta.x === 0 && springSpaceDelta.y === 0) {
 						return;
 					}
@@ -1585,7 +1640,20 @@
 					this._requestRender();
 				}
 			};
-			new SpringSnapTileDragger(canvas);
+			const draggerMap = {
+				"animate transition": (canvas) => new CarykhTileDragger(canvas),
+				"spring and snap": (canvas) => new SpringSnapTileDragger(canvas)
+			};
+
+			let currentDragger = null;
+			const updateDragger = () => {
+				if (currentDragger) {
+					currentDragger.deactivate();
+				}
+				currentDragger = draggerMap[config.draggingMethod](canvas);
+			};
+			app.addEventListener("configChanged", updateDragger);
+			updateDragger();
 		}
 
 		//number of moves tracking ###
@@ -1618,13 +1686,13 @@
 		//main
 		(function(){
 
-			canvas.addEventListener("resized", () => requestRender());
+			canvas.addEventListener("resized", requestRender);
+			app.addEventListener("configChanged", requestRender);
 
 			//finish the game of all rows just stopped moving and 
 			//all tiles are in their initial position
 			tileLayer.addEventListener("rowMovingStopped", e => {
 				if (app.gameState === "running" && tileLayer.areTileGridPositionsInInitialState()) {
-					console.log("all tiles in initial positions");
 					app.finish();
 				}
 			});
@@ -1664,952 +1732,6 @@
 		})();
 	}
 </script>		
-
-<!-- unsorted 
-<script>
-	{
-		let config = null;
-		app.applyConfig = (newConfig) => {
-			const oldConfig = config;
-			config = newConfig;
-
-			app.dispatchEvent(new CustomEvent("configChanged", {
-				detail: {
-					prevConfig: oldConfig,
-					newConfig: config,
-					config: config
-				}
-			}));
-
-			//gradients
-			{
-				let gradientUpdateDue = false;
-				if (oldConfig === null) {
-					gradientUpdateDue = false;
-				}
-				else {
-					const oldGradient = oldConfig.style.gradient;
-					const newGradient = newConfig.style.gradient;
-					gradientUpdateDue = newGradient !== oldGradient && newGradient !== "simple";
-				}
-				if (gradientUpdateDue) {
-					app.dispatchEvent(new CustomEvent("gradientConfigChanged", {
-						detail: {
-							gradientType: config.style.gradient
-						}
-					}));
-				}
-			}
-
-			if (app.gameState !== "not started") {
-				tileBoard.stopTileRowMoving();
-			}
-		};
-
-		//tile-position manager ###
-		const tileBoard = new EventTarget();
-		window.tileBoard = tileBoard;
-		{
-			//definitions:
-			//board-space: a coordinate system where a unit has the screen-size of a tile and with a fixed size
-			//board-grid-space: like board-space but the coordinates are floored => boardSpacePoint.quantized(1)
-			//plane-point: like board-space but without a fixed size, goes on infinitely long
-			//canvas-point: pixels relative to canvas
-
-			const getTileSize = () => tileSize;
-			const getBoardRect = () => new Rect2D(0, 0, getHorizontalTileCount(), getVerticalTileCount());
-
-			//planePoint: { x: number, y: number }
-			boardManager.planePointToBoardPoint = (planePoint) => {
-				return planePoint.loopedOverRect(getBoardRect());
-			};
-			boardManager.planePointToBoardGridPoint = (planePoint) => {
-				const boardPoint = boardManager.planePointToBoardPoint(planePoint);
-				return boardPoint.quantized(1);
-			};
-			boardManager.planeGridPointToBoardGridPoint = (planeGridPoint) => {
-				return planeGridPoint.loopedOverRect(getBoardRect());
-			};
-			boardManager.canvasPointToPlanePoint = (canvasPoint) => {
-				return canvasPoint.divide(getTileSize());
-			};
-			boardManager.canvasPointToBoardPoint = (canvasPoint) => {
-				return boardManager.planePointToBoardPoint(boardManager.canvasPointToPlanePoint());
-			};
-
-			const isNumInLoopRange = (loopSize, rangeStart, rangeSize, num) => {
-				const rawRangeEnd = rangeStart + rangeSize;
-				const loopedRangeEnd = MathUtil.loopNum(0, loopSize, rawRangeEnd);
-				if (rangeStart < loopSize - rangeSize){
-					return num >= rangeStart && num <= rawRangeEnd;
-				}
-				else {
-					return num >= rangeStart || num <= loopedRangeEnd;
-				}
-			};
-			boardManager.getTileAtBoardPoint = boardPoint => {
-				return getTiles().find(tile => {
-					const boardTilePosition = boardManager.planePointToBoardPoint(tile.position);
-					return 	isNumInLoopRange(getHorizontalTileCount(), boardTilePosition.x, 1, boardPoint.x) &&
-							isNumInLoopRange(getVerticalTileCount(), boardTilePosition.y, 1, boardPoint.y);
-				});
-			};
-			boardManager.getTileAtPlanePoint = planePoint => {
-				const boardPoint = boardManager.planePointToBoardPoint(planePoint);
-				return boardManager.getTileAtBoardPoint(boardPoint);
-			};
-		}
-
-		//shape: "disc" ###
-		let createDiscGradientImageData, renderTileOnDisc, initImageMetrics;
-		{
-			const polarRenderingConfig = {
-				pixelPerRadius: 60,
-				radiusPerTile: 1,
-				//the center circle has to have a greater radius than any tile
-				centerCircleRadius: 1.2,
-				lineWidth: 0.025,
-				getAnglePerTile: () => (Math.PI * 2) / horizontalSize,
-				getOuterRadius: () => polarRenderingConfig.centerCircleRadius + verticalSize * polarRenderingConfig.radiusPerTile
-			};
-
-			//image measurements
-			initImageMetrics = () => {
-				const centerCircleRadius = polarRenderingConfig.centerCircleRadius;
-				const radiusPerTile = polarRenderingConfig.radiusPerTile;
-				const anglePerTileHalf = polarRenderingConfig.getAnglePerTile() / 2;
-				const pixelPerRadius = polarRenderingConfig.pixelPerRadius;
-				const outerRadius = polarRenderingConfig.getOuterRadius();
-				const radiusPerTileHalf = radiusPerTile / 2;
-				const sizingRadius = outerRadius + radiusPerTileHalf;
-
-				const lowerRadius = sizingRadius - radiusPerTileHalf;
-				const upperRadius = sizingRadius + radiusPerTileHalf;
-				const maxX = Math.sin(anglePerTileHalf) * upperRadius;
-				const minY = Math.cos(anglePerTileHalf) * lowerRadius;
-				const maxY = upperRadius;
-				const width = maxX * 2;
-				const height = maxY - minY;
-				const middleY = radiusPerTileHalf;
-
-				const imageWidth = width * pixelPerRadius;
-				const imageHeight = height * pixelPerRadius;
-				polarRenderingConfig.imageMetrics = {
-					sizingRadius: sizingRadius,
-					width: imageWidth,
-					height: imageHeight,
-					centerX: imageWidth / 2,
-					centerY: middleY * pixelPerRadius
-				};
-			};
-
-			createDiscGradientImageData = tile => {
-				const wheelRadius = polarRenderingConfig.getOuterRadius() * 1.5;
-				const wheelRadiusPixels = polarRenderingConfig.pixelPerRadius * wheelRadius;
-				polarRenderingConfig.wheelRadiusPixels = wheelRadiusPixels;
-				const squareSize = wheelRadiusPixels * 2;
-				createRectImage(squareSize, squareSize, (x, y) => {
-					return [Math.floor(255 * x / squareSize), Math.floor(255 * y / squareSize), 80, 255];
-				}).then(image => polarRenderingConfig.colorWheelImage = image);
-				console.log(polarRenderingConfig);
-			};
-			window.createDiscGradientImageData = createDiscGradientImageData;
-			/*createDiscGradientImageData = (tile) => {
-				const centerCircleRadius = polarRenderingConfig.centerCircleRadius;
-				const radiusPerTile = polarRenderingConfig.radiusPerTile;
-				const anglePerTile = polarRenderingConfig.getAnglePerTile();
-				const pixelPerRadius = polarRenderingConfig.pixelPerRadius;
-				const outerRadius = polarRenderingConfig.getOuterRadius();
-
-				const middleRadius = centerCircleRadius + (tile.initialPosition.y + 0.5) * radiusPerTile;
-				const middleAngle = (tile.initialPosition.x + 0.5) * anglePerTile;
-				const sizingRadius = polarRenderingConfig.imageMetrics.sizingRadius;
-				const sizingFactor = sizingRadius / middleRadius;
-
-				const lowerRadius = sizingRadius - radiusPerTile / 2;
-				const upperRadius = sizingRadius + radiusPerTile / 2;
-				const maxX = Math.sin(anglePerTile / 2) * upperRadius;
-				const minY = Math.cos(anglePerTile / 2) * lowerRadius;
-				const maxY = upperRadius;
-				const width = maxX * 2;
-				const height = maxY - minY;
-				const middleY = radiusPerTile / 2;
-
-				const imageWidth = width * pixelPerRadius;
-				const imageHeight = height * pixelPerRadius;
-				const imageCenter = new Vector2D(imageWidth / 2, middleY * pixelPerRadius);
-				const imagePointToDiscSegmentPoint = imagePoint => {
-					return imageCenter.vectorTo(imagePoint).scale(1 / (pixelPerRadius * sizingFactor));
-				};
-
-				const colorWheelMargin = 20;
-				const colorWheelRadius = 255 - colorWheelMargin;
-				const boardDiscToColorDiscScale = colorWheelRadius / outerRadius;
-				const [sin, cos] = [Math.sin(middleAngle) * boardDiscToColorDiscScale, Math.cos(middleAngle) * boardDiscToColorDiscScale];
-				const rotationMatrix = [cos, -sin, sin, cos];
-				const centerPointOnColorWheel = new Vector2D(255 / 2, 255 / 2).plus(
-					new Vector2D(rotationMatrix[2], rotationMatrix[3]).scale(middleRadius)
-				);
-
-				const discSegmentPointToColorWheelPoint = discSegmentPoint => {
-					return centerPointOnColorWheel.plus(new Vector2D(
-						discSegmentPoint.x * rotationMatrix[0] + discSegmentPoint.y * rotationMatrix[2],
-						discSegmentPoint.x * rotationMatrix[1] + discSegmentPoint.y * rotationMatrix[3],
-					));
-				};
-
-				const getPixelAt = (x, y) => {
-					const imagePoint = new Vector2D(x, y);
-					const discSegmentPoint = imagePointToDiscSegmentPoint(imagePoint);
-					const colorWheelPoint = discSegmentPointToColorWheelPoint(discSegmentPoint);
-					return [Math.floor(colorWheelPoint.x), Math.floor(colorWheelPoint.y), 50, 255];
-				};
-				return createRectImage(imageWidth, imageHeight, getPixelAt);
-			};*/
-
-			const makeDiscPathClipping = (ctx) => {
-				const halfLineWidth = polarRenderingConfig.lineWidth / 2;
-				const radiusPerTile = polarRenderingConfig.radiusPerTile;
-				const centerCircleRadius = polarRenderingConfig.centerCircleRadius;
-				const maxDiscRadius = centerCircleRadius + radiusPerTile * verticalSize;
-				ctx.beginPath();
-				ctx.arc(horizontalSize / 2, verticalSize / 2, maxDiscRadius + halfLineWidth, 0, Math.PI * 2);
-				ctx.arc(horizontalSize / 2, verticalSize / 2, centerCircleRadius - halfLineWidth, 0, Math.PI * 2, true);
-				ctx.closePath();
-				ctx.clip();
-			};
-			/*renderTileOnDisc = (tile, x, y) => {
-
-				const pixelRatio = getCanvasPixelRatio();
-				ctx.scale(pixelRatio, pixelRatio);
-
-				ctx.translate(canvas.width / 2, canvas.height / 2);
-
-				const radiusPerTile = polarRenderingConfig.radiusPerTile;
-				const centerCircleRadius = polarRenderingConfig.centerCircleRadius;
-
-				const anglePerTile = polarRenderingConfig.getAnglePerTile();
-				const halfAnglePerTile = anglePerTile / 2;
-
-				const angle = (x / horizontalSize) * Math.PI * 2;
-				let radius = polarRenderingConfig.imageMetrics.sizingRadius * 0.5 + radiusPerTile / 2;//centerCircleRadius + radiusPerTile * (y + 1);
-				const middleRadius = radius - radiusPerTile / 2;
-				const middleAngle = angle + halfAnglePerTile;
-
-				ctx.fillCircle(0, 0, 10);
-				ctx.scale(1, -1);
-				ctx.rotate(-middleAngle);
-				ctx.scaleUniformly(polarRenderingConfig.pixelPerRadius);
-
-				ctx.fillCircle(0, middleRadius, 0.08);
-				ctx.fillCircle(0, polarRenderingConfig.imageMetrics.sizingRadius, 0.08);
-
-				//disc segment
-				ctx.save();
-				const discSegmentPath = new Path2D();
-				ctx.rotate(Math.PI / 2);
-				ctx.beginPath();
-				ctx.arc(0, 0, radius, -halfAnglePerTile, halfAnglePerTile, false);
-				ctx.arc(0, 0, radius - radiusPerTile, halfAnglePerTile, -halfAnglePerTile, true);
-				ctx.closePath();
-				ctx.restore();
-
-
-				if (tile.imageData) {
-					ctx.save();
-					//ctx.clip();
-					const imageMetrics = polarRenderingConfig.imageMetrics;
-					const sizingRadius = imageMetrics.sizingRadius;
-					const sizingFactor = middleRadius / sizingRadius;
-					
-					ctx.scaleUniformly(sizingFactor);
-					ctx.translate(0, sizingRadius);
-					ctx.scaleUniformly(1 / (polarRenderingConfig.pixelPerRadius));
-					ctx.scale(1, -1);
-					ctx.translate(-imageMetrics.centerX, -imageMetrics.centerY);
-					ctx.drawImage(tile.imageData, 0, 0);
-					ctx.restore();
-				}
-
-				//ctx.fillStyle = "teal";
-				//ctx.fill();
-
-				ctx.lineWidth = 0.025;
-				ctx.strokeStyle = "black";
-				ctx.stroke();
-			};*/
-
-			renderTileOnDisc = (tile, x, y) => {
-				const pixelRatio = getCanvasPixelRatio();
-				ctx.scale(pixelRatio, pixelRatio);
-
-				ctx.translate(canvas.width / 2, canvas.height / 2);
-
-				const radiusPerTile = polarRenderingConfig.radiusPerTile;
-				const centerCircleRadius = polarRenderingConfig.centerCircleRadius;
-
-				const anglePerTile = polarRenderingConfig.getAnglePerTile();
-				const halfAnglePerTile = anglePerTile / 2;
-
-				const angle = (x / horizontalSize) * Math.PI * 2;
-				let radius = centerCircleRadius + radiusPerTile * (y + 1);
-				const middleRadius = radius - radiusPerTile / 2;
-				const middleAngle = angle + halfAnglePerTile;
-
-				ctx.fillCircle(0, 0, 10);
-				ctx.scale(1, -1);
-				ctx.scaleUniformly(polarRenderingConfig.pixelPerRadius);
-
-				ctx.rotate(-middleAngle);
-
-				//disc segment
-				ctx.save();
-				const discSegmentPath = new Path2D();
-				ctx.rotate(Math.PI / 2);
-				ctx.beginPath();
-				ctx.arc(0, 0, radius, -halfAnglePerTile, halfAnglePerTile, false);
-				ctx.arc(0, 0, radius - radiusPerTile, halfAnglePerTile, -halfAnglePerTile, true);
-				ctx.closePath();
-				ctx.restore();
-
-				{
-					ctx.save();
-
-					const wheelRadius = polarRenderingConfig.getOuterRadius() * 1.5;
-
-					const initialMiddleAngle = (tile.initialPosition.x / horizontalSize) * Math.PI * 2 + halfAnglePerTile;
-					const initialMiddleRadius = centerCircleRadius + radiusPerTile * (tile.initialPosition.y + 0.5);
-					const [sin, cos] = [Math.sin(initialMiddleAngle), Math.cos(initialMiddleAngle)];
-					const initialMiddlePoint = new Vector2D(sin, cos).scale(initialMiddleRadius);
-					const rectCorner = new Vector2D(-wheelRadius, -wheelRadius);
-					const relativeRectCorner = initialMiddlePoint.vectorTo(rectCorner);
-					const localRectCornerMatrix = [
-						cos, sin, -sin, cos
-					];
-					const localRectCorner = new Vector2D(
-						relativeRectCorner.x * localRectCornerMatrix[0] + relativeRectCorner.y * localRectCornerMatrix[2],
-						relativeRectCorner.x * localRectCornerMatrix[1] + relativeRectCorner.y * localRectCornerMatrix[3]
-					);
-					const localRectMatrix = [
-						cos, sin, -sin, cos, localRectCorner.x, localRectCorner.y
-					];
-
-					ctx.translate(0, middleRadius);
-					ctx.transform(...localRectMatrix);
-					//ctx.strokeStyle = "red";
-					//ctx.strokeRect(0, 0, wheelRadius * 2, wheelRadius * 2);
-					//ctx.fillStyle = "teal";
-					//ctx.fillCircle(-relativeRectCorner.x, -relativeRectCorner.y, 0.1);
-
-					if (polarRenderingConfig.colorWheelImage) {
-						const wheelRadius = polarRenderingConfig.getOuterRadius() * 1.5;
-						const wheelRadiusPixels = polarRenderingConfig.pixelPerRadius * wheelRadius;
-						ctx.scaleUniformly(1 / polarRenderingConfig.pixelPerRadius);
-						ctx.clip();
-						ctx.drawImage(polarRenderingConfig.colorWheelImage, 0, 0);
-					}
-
-					ctx.restore();
-				}
-
-				ctx.lineWidth = 0.05;
-				ctx.stroke();
-			};
-		}
-
-
-		//gradients ###
-		let updateImageDataAndRepaint;
-		{
-			const renderGradientRect = (ctx, startX, startY) => {
-				ctx.save();
-				ctx.scale(1 / tileSize, 1 / tileSize);
-				for (let x = 0; x < tileSize; x++) {
-					for (let y = 0; y < tileSize; y++) {
-						const r = 255 * ((startX * tileSize) + x) / canvas.width;
-						const g = 255 * ((startY * tileSize) + y) / canvas.height;
-						const b = 60;
-						ctx.fillStyle = `rgb(${r},${g},${b})`;
-						ctx.fillRect(x, y, 1, 1);
-					}
-				}
-				ctx.restore();
-			};
-			const createRectGradientImageData = (startX, startY, continuous) => {
-				const rectSize = tileSize * getCanvasPixelRatio();
-				const getPixelAt = (x, y) => {
-					let pixelX = (startX * rectSize);
-					let pixelY = (startY * rectSize);
-					if (continuous) {
-						pixelX += x;
-						pixelY += y;
-					}
-					const r = Math.round(255 * pixelX / canvas.width);
-					const g = Math.round(255 * pixelY / canvas.height);
-					const b = 50;
-					return [r, g, b, 255];
-				};
-				return createRectImage(rectSize, rectSize, getPixelAt);
-			};
-			const createImageDataForTile = tile => {
-				return createDiscGradientImageData(tile);
-			};
-			const updateGradientData = (tiles) => {
-				return Promise.resolve();
-				const promises = [];
-				for (let tile of tiles) {
-					const finishPromise = createImageDataForTile(tile).then(img => tile.imageData = img);
-					promises.push(finishPromise);
-				}
-				return Promise.all(promises);
-			};
-			updateImageDataAndRepaint = () => {
-				if (["continuous", "discrete"].includes(config.style.gradient)) {
-					tiles.forEach(tile => tile.imageData = null);
-					updateGradientData(tiles).then(() => requestRender());
-				}
-			};
-			canvas.addEventListener("resized", () => updateImageDataAndRepaint());
-		}
-
-
-		//Tile Dragging ###
-		{
-			let CarykhTileDragger, SpringSnapTileDragger;
-			{
-				class TileDragger extends DragHelper {
-					constructor(canvas) {
-						super(canvas);
-						this._gameStateChangedCallback = () => {
-							if (this._getGameState() === "not started") {
-								this.deactivate();
-							}
-						};
-						this._getApp().addEventListener("gameStateChanged", this._gameStateChangedCallback);
-					}
-					deactivate() {
-						this.detach();
-						this._getApp().removeEventListener("gameStateChanged", this._gameStateChangedCallback);
-					}
-					_getApp() {
-						return app;
-					}
-					_getGameState() {
-						return this._getApp().gameState;
-					}
-					_onRowMoved() {
-						onRowMoved();
-					}
-					_requestRender() {
-						requestRender();
-					}
-					get isDragging() {
-						this._dragging;
-					}
-				}
-				CarykhTileDragger = class extends TileDragger {
-					constructor(canvas) {
-						super(canvas);
-	
-						this._prevMouseGridPoint = null;
-						this._moveAnimations = [];
-					}
-					deactivate() {
-						super.deactivate();
-						this._skipAllAnimations();
-					}
-					_getMouseGridPoint(canvasPoint) {
-						return tileBoard.canvasPointToPlanePoint(canvasPoint).quantized(1);
-					}
-					_skipAllAnimations() {
-						this._moveAnimations.slice().forEach(ani => ani.skip());
-					}
-					_moveRow(direction, rowIndex, stride, animate) {
-						const moveAnimations = this._moveAnimations;
-						const strideVector = direction === "horizontal" ? new Vector2D(stride, 0) : new Vector2D(0, stride);
-						if (animate) {
-							let prevAnimProgress = 0;
-							const anim = new Animation(100,
-								progress => {
-									progress = easing.fastInSlowOut(progress);
-									tileBoard.moveTileRow(direction, rowIndex, stride * (progress - prevAnimProgress));
-									prevAnimProgress = progress;
-									requestRender();
-								},
-								() => {
-									tileBoard.moveTileRow(direction, rowIndex, (1 - prevAnimProgress) * stride);
-									tileBoard.stopTileRowMoving();
-	
-									const animIndex = moveAnimations.indexOf(anim);
-									if (animIndex >= 0) {
-										moveAnimations.splice(animIndex, 1);
-									}
-								}
-							);
-							anim.start(true);
-							moveAnimations.push(anim);
-						}
-						else {
-							tileBoard.moveTileRow(direction, rowIndex, stride);
-							tileBoard.stopTileRowMoving();
-						}
-					}
-					onDragStart(e) {
-						this._prevMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
-					}
-					onDrag(e) {
-						const prevMouseGridPoint = this._prevMouseGridPoint;
-						const curMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
-						const delta = Vector2D.vectorBetween(prevMouseGridPoint, curMouseGridPoint);
-						if (delta.x !== 0 || delta.y !== 0) {
-							if (this._moveAnimations.length > 0) {
-								this._skipAllAnimations();
-							}
-							const useAnimation = !(delta.x !== 0 && delta.y !== 0);
-							for (let a = 0; a < 2; a++) {
-								const direction = ["horizontal", "vertical"][a];
-								const prop = ["x", "y"][a];
-								const orthoProp = ["y", "x"][a];
-								const stride = curMouseGridPoint[prop] - prevMouseGridPoint[prop];
-								const rowIndex = prevMouseGridPoint[orthoProp];
-								if (stride !== 0) {
-									this._moveRow(direction, rowIndex, stride, useAnimation);
-									prevMouseGridPoint[prop] += stride;
-								}
-							}
-							requestRender();
-						}
-						this._prevMouseGridPoint = curMouseGridPoint;
-					}
-				};
-				SpringSnapTileDragger = class extends TileDragger {
-					constructor(canvas) {
-						super(canvas);
-	
-						this._mouseDownTileSpacePoint = null;
-						this._prevSpringSpacePoint = null;
-						this._prevDragPoint = null;
-						this._dragVectorQueue = [];
-						this._maxDragQueueSize = 7;
-						this._dragVectorSum = new Vector2D();
-						this._currentDragDirection = "unknown";
-	
-						this._draggedTile = null;
-						this._targetPoint = null;
-						this._springPath = [];
-						this._springStrength = 15;
-						this._recordedMousePath = [];
-	
-						this.clickCount = 0;
-	
-						this._prevUpdateTime = performance.now();
-						this._springPhysicsActive = true;
-						const loopFunc = () => {
-							if (!this._springPhysicsActive) {
-								return;
-							}
-							this._updateSpringPhysics();
-							requestAnimationFrame(loopFunc);
-						};
-						loopFunc();
-					}
-	
-					deactivate() {
-						super.deactivate();
-						this._springPhysicsActive = false;
-						if (this._springPath.length > 1) {
-							//this._moveTilesByPath(SpringSnapTileDragger._polylineShiftedByAHalf(this._springPath));
-						}
-					}
-	
-					_updateSpringPhysics() {
-						const curTime = performance.now();
-						const deltaTime = (curTime - this._prevUpdateTime) / 1000;
-	
-						const springPath = this._springPath;
-						if (springPath.length > 1) {
-							const springPathLength = SpringSnapTileDragger._getPolylinePathLength(springPath);
-							if (springPathLength > 1e-3) {
-								const springDeltaDistance = deltaTime * this._springStrength * springPathLength;
-								const cutPath = SpringSnapTileDragger._getCutPolyline(springPath, springDeltaDistance);
-								this._springPath = cutPath[1];
-								const tileMovePath = cutPath[0].map(point => point.minusHalf());
-								this._moveTilesByPath(tileMovePath);
-	
-								this._drawDebug();
-								this._requestRender();
-							}
-							else {
-								if (!this._dragging) {
-									tileBoard.stopTileRowMoving();
-								}
-							}
-						}
-	
-						this._prevUpdateTime = curTime;
-					}
-					_drawDebug() {
-						return;
-						drawDebug((ctx) => {
-							ctx.save();
-							ctx.scale(tileSize, tileSize);
-	
-							ctx.lineWidth = 0.02;
-							ctx.strokeStyle = "black";
-							ctx.strokePolyline(this._springPath);
-							this._springPath.forEach(point => ctx.fillCircle(point.x, point.y, 0.035));
-	
-							ctx.restore();
-						});
-					}
-					_getSpringSpacePoint(point) {
-						return this._getCurrentLeaningPoint(point);
-					}
-					_handleSpringDeltaAppending(curSpringSpacePoint) {
-						const springPath = this._springPath;
-						const prevSpringSpacePoint = springPath[springPath.length - 1];
-						const springSpaceDelta = prevSpringSpacePoint.vectorTo(curSpringSpacePoint);
-						if (springSpaceDelta.x === 0 && springSpaceDelta.y === 0) {
-							return;
-						}
-						let quantizedDeltaPath = SpringSnapTileDragger._getQuantizedGridIntersectionPath(prevSpringSpacePoint, curSpringSpacePoint);
-						quantizedDeltaPath.forEach(vec => vec.transformComponents(c => c + 0.5));
-						if (quantizedDeltaPath.length > 1) {
-							const insertRest = (fromIndex, toIndex, restPoint, insertAfter) => {
-								const deltaVec = quantizedDeltaPath[fromIndex].vectorTo(quantizedDeltaPath[toIndex]).signed();
-								const fromPointToRest = quantizedDeltaPath[fromIndex].vectorTo(restPoint).signed();
-								quantizedDeltaPath.splice(fromIndex + (insertAfter ? 1 : 0), 0, restPoint);
-								if (fromPointToRest.equals(deltaVec)) {
-									quantizedDeltaPath.splice(fromIndex + (insertAfter ? 0 : +1), 1);
-								}
-							};
-	
-							insertRest(0, 1, prevSpringSpacePoint);
-							insertRest(quantizedDeltaPath.length - 1, quantizedDeltaPath.length - 2, curSpringSpacePoint, true);
-						}
-						else {
-							quantizedDeltaPath = [];
-							const center = this._targetPointTilePosition.transformedComponents(c => c + 0.5);
-							const [localPrev, localCur] = [prevSpringSpacePoint, curSpringSpacePoint].map(point => center.vectorTo(point));
-							quantizedDeltaPath.push(prevSpringSpacePoint, curSpringSpacePoint);
-							if (!localPrev.signed().equals(localCur.signed())) {
-								quantizedDeltaPath.splice(1, 0, center);
-							}
-						}
-						quantizedDeltaPath = SpringSnapTileDragger._simplifyPolyline(quantizedDeltaPath);
-	
-						//try appending the delta-path
-						if (springPath.length < 2) {
-							springPath.push(...quantizedDeltaPath);
-						}
-						else {
-							let curDeltaPathTargetIndex = 1;
-							for (let a = 0; a < 100000; a++) {
-								if (curDeltaPathTargetIndex === quantizedDeltaPath.length) {
-									break;
-								}
-								const lastPathPoint = springPath[springPath.length - 1];
-								const curStrideTarget = quantizedDeltaPath[curDeltaPathTargetIndex];
-								if (springPath.length === 1) {
-									springPath.push(curStrideTarget);
-									curDeltaPathTargetIndex++;
-									continue;
-								}
-								const secondLastPathPoint = springPath[springPath.length - 2];
-								const lastSegmentVec = lastPathPoint.vectorTo(secondLastPathPoint);
-								const lastSegmentVecSigned = lastSegmentVec.signed();
-	
-								const curStrideVector = lastPathPoint.vectorTo(curStrideTarget);
-								const curStrideVectorSigned = curStrideVector.signed();
-								if (curStrideVectorSigned.equals(lastSegmentVecSigned)) {
-									const curStrideMag = SpringSnapTileDragger._getAlignedVectorLength(curStrideVector);
-									const lastSegmentMag = SpringSnapTileDragger._getAlignedVectorLength(lastSegmentVec);
-									if (curStrideMag < lastSegmentMag) {
-										springPath[springPath.length - 1] = curStrideTarget;
-									}
-									else {
-										springPath.splice(springPath.length - 1, 1);
-									}
-	
-									if (curStrideMag <= lastSegmentMag) {
-										curDeltaPathTargetIndex++;
-									}
-								}
-								else {
-									springPath.push(curStrideTarget);
-									curDeltaPathTargetIndex++;
-								}
-							}
-						}
-						this._springPath = SpringSnapTileDragger._simplifyPolyline(springPath);
-					}
-	
-					_moveTilesByPath(movePath) {
-						if (movePath.length === 0) {
-							return;
-						}
-						const draggedTile = this._draggedTile;
-						for (let a = 1; a < movePath.length; a++) {
-							const draggedTileTargetPoint = movePath[a];
-							const draggedTileTargetPointQuantized = draggedTileTargetPoint.plusHalf().quantized(1);
-							const prevPoint = movePath[a - 1];
-							const curMoveVec = prevPoint.vectorTo(draggedTileTargetPoint);
-							const curMoveDir = curMoveVec.x === 0 ? "vertical" : "horizontal";
-							const curMoveAmount = curMoveDir === "horizontal" ? curMoveVec.x : curMoveVec.y;
-							tileBoard.moveTileRow(curMoveDir, prevPoint.plusHalf(), curMoveAmount);
-						}
-					}
-	
-					//leaning ###
-					_getLeaning(val) {
-						let scale = 1;
-						//const dragVecSum = this._dragVectorSum;
-						//if (dragVecSum.x !== 0 || dragVecSum.y !== 0){
-						//	const dragVecSumNorm = dragVecSum.normalized();
-						//	scale = Math.abs(dragVecSumNorm.x - dragVecSumNorm.y);
-						//}
-	
-						return Math.sign(val) * Math.log(Math.abs(val) + 1) * scale * 0.2;
-					}
-					_getSimpleLeaningPoint(point) {
-						const middle = point.quantized(1).transformComponents(c => c += 0.5);
-						const diff = middle.vectorTo(point);
-						return Math.abs(diff.x) > Math.abs(diff.y) ?
-							middle.plus(new Vector2D(diff.x, 0)) : middle.plus(new Vector2D(0, diff.y));
-					}
-					_getLeaningPoint(point, direction) {
-						const tilePosition = point.quantized(1).plusHalf();
-						const rawLeaningVector = tilePosition.vectorTo(point);
-						const leaningVector = new Vector2D();
-						if (direction === "horizontal") {
-							leaningVector.x = this._getLeaning(rawLeaningVector.x);
-						}
-						else if (direction === "vertical") {
-							leaningVector.y = this._getLeaning(rawLeaningVector.y);
-						}
-						return tilePosition.plus(leaningVector);
-					}
-					_getCurrentLeaningPoint(point) {
-						return this._getLeaningPoint(point, this._currentDragDirection);
-					}
-	
-					//polyline util ###
-					static _getAlignedVectorLength(vector) {
-						return Math.abs(vector.x !== 0 ? vector.x : vector.y);
-					}
-					static _getQuantizedGridIntersectionPath(startPoint, endPoint) {
-						const gridIntersectionData = MathUtil.getLineToGridLineIntersections(startPoint, endPoint);
-						const curPoint = startPoint.quantized(1);
-						const signVector = startPoint.vectorTo(endPoint).transformComponents(Math.sign);
-						const quantizedIntersectionPath = [curPoint.copy()];
-						for (let intersectionData of gridIntersectionData) {
-							const strideDirection = intersectionData.lineDirection === "vertical" ? "horizontal" : "vertical";
-	
-							if (strideDirection === "horizontal") {
-								curPoint.x += signVector.x;
-							}
-							else if (strideDirection === "vertical") {
-								curPoint.y += signVector.y;
-							}
-							quantizedIntersectionPath.push(curPoint.copy());
-						}
-						return quantizedIntersectionPath;
-					}
-					static _removeZeroSegmentsFromPolyline(polyline) {
-						let doublesRemoved = [polyline[0]];
-						for (let a = 1; a < polyline.length; a++) {
-							const point = polyline[a];
-							const lastFromDoublesRemoved = doublesRemoved[doublesRemoved.length - 1];
-							if (!point.equals(lastFromDoublesRemoved)) {
-								doublesRemoved.push(point);
-							}
-						}
-						return doublesRemoved;
-					}
-					//only works with perfectly horizontal/vertical segments
-					static _removeRedundantSubdivisions(polyline) {
-						if (polyline.length < 2) {
-							return polyline;
-						}
-	
-						const signedDeltaVectors = [];
-						for (let a = 0; a < polyline.length - 1; a++) {
-							signedDeltaVectors.push(polyline[a].vectorTo(polyline[a + 1]).signed());
-						}
-	
-						const signedVectorChangeIndices = [0];
-						for (let a = 1; a < signedDeltaVectors.length; a++) {
-							if (!signedDeltaVectors[a].equals(signedDeltaVectors[a - 1])) {
-								signedVectorChangeIndices.push(a);
-							}
-						}
-						signedVectorChangeIndices.push(polyline.length - 1);
-	
-						const withoutRedundancy = signedVectorChangeIndices.map(index => polyline[index]);
-						return withoutRedundancy;
-					}
-					static _simplifyPolyline(polyline) {
-						let simplified = polyline;
-						simplified = SpringSnapTileDragger._removeZeroSegmentsFromPolyline(simplified);
-						simplified = SpringSnapTileDragger._removeRedundantSubdivisions(simplified);
-						return simplified;
-					}
-					static _getCutPolyline(polyline, pathLength) {
-						const beforeCut = [polyline[0]];
-						let currentLength = 0;
-						let connectingIndex = 0;
-						for (let a = 0; a < polyline.length - 1; a++) {
-							const segmentVec = polyline[a].vectorTo(polyline[a + 1]);
-							const segmentLength = SpringSnapTileDragger._getAlignedVectorLength(segmentVec);
-							const nextLength = currentLength + segmentLength;
-							if (nextLength <= pathLength) {
-								beforeCut.push(polyline[a + 1]);
-							}
-							else {
-								const missingSegmentLength = segmentLength - (nextLength - pathLength);
-								const prop = segmentVec.x !== 0 ? "x" : "y";
-								const missingEndPoint = new Vector2D();
-								missingEndPoint[prop] = Math.sign(segmentVec[prop]) * missingSegmentLength;
-								missingEndPoint.add(polyline[a]);
-								beforeCut.push(missingEndPoint);
-							}
-	
-							if (nextLength >= pathLength) {
-								connectingIndex = nextLength > pathLength ? a + 1 : a + 2;
-								break;
-							}
-							currentLength = nextLength;
-						}
-	
-						const afterCut = [beforeCut[beforeCut.length - 1], ...polyline.slice(connectingIndex)];
-	
-						return [beforeCut, afterCut];
-					}
-					static _getPolylinePathLength(polyline) {
-						let pathLength = 0;
-						for (let a = 0; a < polyline.length - 1; a++) {
-							pathLength += SpringSnapTileDragger._getAlignedVectorLength(polyline[a].vectorTo(polyline[a + 1]));
-						}
-						return pathLength;
-					}
-					static _polylineShiftedByAHalf(polyline) {
-						return polyline.map(point => point.transformedComponents(c => c + 0.5));
-					}
-	
-					onDragStart(e) {
-						this.clickCount++;
-						if (this.clickCount > 1) {
-							//this.onDrag(e);
-							//return;
-						}
-	
-						//handle the current spring path immediately
-						if (this._springPath.length > 0) {
-							this._moveTilesByPath(this._springPath.map(point => point.minusHalf()));
-							tileBoard.stopTileRowMoving();
-						}
-						this._springPath = [];
-	
-						const tileSpacePoint = tileBoard.canvasPointToPlanePoint(e.localMousePoint);
-						this._mouseDownTileSpacePoint = tileSpacePoint;
-						this._targetPoint = tileSpacePoint.copy();
-						this._targetPointTilePosition = this._targetPoint.quantized(1);
-	
-						this._draggedTile = tileBoard.getTileAtPlanePoint(this._targetPointTilePosition);
-						this._prevDragPoint = e.localMousePoint;
-						this._prevSpringSpacePoint = this._getSpringSpacePoint(tileSpacePoint);
-						this._springPath.push(this._targetPointTilePosition.transformedComponents(c => c + 0.5));
-	
-						this._drawDebug();
-						this._requestRender();
-					}
-					onDrag(e) {
-						const springPath = this._springPath;
-						const tileSpacePoint = tileBoard.canvasPointToPlanePoint(e.localMousePoint);
-						this._targetPoint = tileSpacePoint.copy();
-						this._targetPointTilePosition = tileBoard.planePointToBoardGridPoint(tileSpacePoint);
-	
-						//drag direction
-						const curDragVector = e.localMousePoint.vectorTo(this._prevDragPoint);
-						if (curDragVector.x === 0 && curDragVector.y === 0) {
-							return;
-						}
-						this._dragVectorQueue.unshift(curDragVector);
-						if (this._dragVectorQueue.length > this._maxDragQueueSize) {
-							this._dragVectorQueue.pop();
-						}
-						if (this._dragVectorQueue.length === this._maxDragQueueSize) {
-							const dragVectorSum = new Vector2D();
-							this._dragVectorQueue.forEach(vec => dragVectorSum.add(vec.transformedComponents(Math.abs)));
-							this._currentDragDirection = Math.abs(dragVectorSum.x) > Math.abs(dragVectorSum.y) ? "horizontal" : "vertical";
-							this._dragVectorSum = dragVectorSum;
-						}
-	
-						//construct and append the delta-path
-						const curSpringSpacePoint = this._getSpringSpacePoint(tileSpacePoint);
-						this._handleSpringDeltaAppending(curSpringSpacePoint);
-	
-						this._prevDragPoint = e.localMousePoint;
-						this._prevSpringSpacePoint = curSpringSpacePoint;
-						this._drawDebug();
-						this._requestRender();
-					}
-					onDragEnd(e) {
-	
-						this._dragVectorQueue = [];
-						this._currentDragDirection = "unknown";
-	
-						this._handleSpringDeltaAppending(this._prevSpringSpacePoint.quantized().transformedComponents(c => c + 0.5));
-	
-						this._drawDebug();
-						this._requestRender();
-					}
-				}
-			}
-			let currentDragger = null;
-			app.addEventListener("gameStateChanged", e => {
-				if (app.gameState === "finished" && currentDragger !== null){
-					//currentDragger.deactivate();
-				}
-			});
-			app.addEventListener("configChanged", e => {
-				const draggerMap = {
-					"carykh": (canvas) => new CarykhTileDragger(canvas),
-					"spring and snap": (canvas) => new SpringSnapTileDragger(canvas)
-				};
-				if (currentDragger !== null) {
-					currentDragger.deactivate();
-				}
-				currentDragger = draggerMap[e.detail.newConfig.draggingMethod](canvas);
-			});
-		}
-		 
-		const onGameStarted = () => {
-
-			initTiles();
-			initImageMetrics();
-			updateCanvasSize();
-		
-			if (config.scrambleOnStart){
-				tileBoard.performRandomMoves(horizontalSize * verticalSize * 5);
-			}
-
-			tileBoard.init();
-
-			requestRender();
-		};
-		app.addEventListener("gameStateChanged", e => {
-			if (e.detail.transition === "start"){
-				onGameStarted();
-			}
-			else if (e.detail.transition === "restart"){
-				app.applyConfig(config);
-				onGameStarted(config);
-			}
-		});
-	}
-</script>
--->
 
 <!-- game ui, stats -->
 <script>
@@ -2715,6 +1837,29 @@
 	}
 </script>
 
+<!-- settings reveal -->
+<script src="CircularRevealHelper.js"></script>
+<script>
+	{
+		const settingsContainer = document.querySelector("#settings-container");
+		const settingsButton = document.querySelector("#settings-button");
+		const revealHelper = new CircularRevealHelper(settingsButton, settingsContainer);
+		settingsButton.addEventListener("click", () => revealHelper.toggleReveal());
+		revealHelper.addEventListener("revealStateChanged", e => {
+			const state = e.detail.revealState;
+			if (state === "opening"){
+				app.pause();
+			}
+			else if (state === "closed"){
+				app.resume();
+			}
+			else if (state === "closing"){
+				app.applyConfig(appSettings.getConfig());
+			}
+		});
+	}
+</script>
+
 <!-- unused 
 <script>
 	/*
@@ -2816,7 +1961,7 @@
 
 	//dragging
 	{
-		/*if (config.draggingMethod === "carykh") {
+		/*if (config.draggingMethod === "animate transition") {
 			const dragger = new CarykhTileDragger(canvas);
 		}
 		else if (config.draggingMethod === "move and snap") {
@@ -3215,61 +2360,7 @@
 </script>
 -->
 
-<!-- settings input 
-<script>
-	{
-		const queryById = id => document.querySelector("#"+id);
-
-		const appSettings = {};
-		window.appSettings = appSettings;
-		appSettings.getConfig = () => {
-			return {
-				numberOfHorizontalTiles: parseInt(queryById("width-input").value),
-				numberOfVerticalTiles: parseInt(queryById("height-input").value),
-				scrambleOnStart: queryById("scramble-on-start-input").checked,
-				draggingMethod: queryById("dragging-method-input").value,
-				style: {
-					gradient: queryById("gradient-input").value,
-					labels: "letters"
-				}
-			};
-		};
-	}
-</script>
--->
-
-<!-- settings reveal 
-<script src="CircularRevealHelper.js"></script>
-<script>
-	{
-		const settingsContainer = document.querySelector("#settings-container");
-		const settingsButton = document.querySelector("#settings-button");
-		const revealHelper = new CircularRevealHelper(settingsButton, settingsContainer);
-		settingsButton.addEventListener("click", () => revealHelper.toggleReveal());
-		revealHelper.addEventListener("revealStateChanged", e => {
-			const state = e.detail.revealState;
-			if (state === "opening"){
-				app.pause();
-			}
-			else if (state === "closed"){
-				app.resume();
-			}
-			else if (state === "closing"){
-				app.applyConfig(appSettings.getConfig());
-			}
-		});
-	}
-</script>
--->
-
-<!-- start 
-<script>
-	app.applyConfig(appSettings.getConfig());
-	app.start();
-</script>
--->
-
-<!-- pause if page is blurred 
+<!-- pause if page is blurred -->
 <script>
 	{
 		let hidden, visibilityChange;
@@ -3297,7 +2388,7 @@
 		document.addEventListener(visibilityChange, handleVisibilityChange, false);
 	}
 </script>
--->
+
 
 </body>
 </html>
