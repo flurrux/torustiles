@@ -33,19 +33,15 @@
 				</div>
 				<div class="stats-value-wrapper">
 					<i class="material-icons">access_time</i>
-					<span id="elapsed-time-element">0s</span>
+					<div style="flex: 1;">
+						<span id="elapsed-time-element">0s</span>
+					</div>
 				</div>
 			</div>
 		</div>
-		<!--<div class="stats-value-wrapper" style="z-index: 3;">
-			<i class="material-icons">photo_camera</i>
-			<div id="delta-time-element">
-				<div id="delta-time-indicator"></div>
-			</div>
-		</div>-->
-		<div id="spacer"></div>
+		<div id="cur-stats-and-settings-spacer"></div>
 		<button id="settings-button" class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect">
-			<div>
+			<div id="settings-icon-rotation-element">
 				<i class="material-icons">settings</i>
 			</div>
 		</button>
@@ -184,7 +180,37 @@
 
 </script>
 
-<!-- settings input -->
+<!-- settings reveal -->
+<script src="CircularRevealHelper.js"></script>
+<script>
+	{
+		const settingsContainer = document.querySelector("#settings-container");
+		const settingsButton = document.querySelector("#settings-button");
+		const revealHelper = new CircularRevealHelper(settingsButton, settingsContainer);
+		window.revealHelper = revealHelper;
+		settingsButton.addEventListener("click", () => revealHelper.toggleReveal());
+	}
+
+	//rotate settings icon
+	{
+		const rotationElement = document.querySelector("#settings-icon-rotation-element");
+		const setRotation = deg => {
+			rotationElement.style.transform = `rotate(${deg}deg)`;
+		};
+
+		revealHelper.addEventListener("revealStateChanged", e => {
+			const state = e.detail.revealState;
+			if (state === "opening") {
+				setRotation(-45);
+			}
+			else if (state === "closing") {
+				setRotation(0);
+			}
+		});
+	}
+</script>
+
+<!-- settings input and persistence -->
 <script>
 	{
 		const queryById = id => document.querySelector("#"+id);
@@ -203,23 +229,65 @@
 				}
 			};
 		};
+		appSettings.applyConfig = config => {
+			queryById("width-input").value = config.numberOfHorizontalTiles;
+			queryById("height-input").value = config.numberOfVerticalTiles;
+			queryById("scramble-on-start-input").checked = config.scrambleOnStart;
+			queryById("dragging-method-input").value = config.draggingMethod;
+			queryById("gradient-input").value = config.style.gradient;
+		};
 	}
+
+	//persistence
+	{
+		const defaultConfig = {
+			numberOfHorizontalTiles: 3,
+			numberOfVerticalTiles: 3,
+			scrambleOnStart: true,
+			draggingMethod: "spring and snap",
+			style: {
+				gradient: "continuous",
+				labels: "numbers"
+			}
+		};
+
+		const loadConfig = () => {
+			let config = { ...defaultConfig };
+			let loaded = localStorage.getItem("torustiles-config");
+			loaded = loaded ? JSON.parse(loaded) : {};
+			config = { ...config, ...loaded };
+			appSettings.applyConfig(config);
+		};
+		loadConfig();
+
+		const saveConfig = () => {
+			const config = appSettings.getConfig();
+			localStorage.setItem("torustiles-config", JSON.stringify(config));
+		};
+		window.addEventListener("beforeunload", () => saveConfig());
+		revealHelper.addEventListener("revealStateChanged", e => {
+			const state = e.detail.revealState;
+			if (state === "closed") {
+				saveConfig();
+			}
+		});
+	}
+
 </script>
 
 <!-- ideas -->
 <script>
 	//ideas and todo:
+	//- persist config and gamestate
 	//- rotate settings icon when clicked
-	//- low poly torus as icon
 	//- scale labels by their size, so they always fit
+	//- low poly torus as icon
 	//- make circular reveal less janky
-	//- persist config
 	//- implement pwa
-	//- wait until all icons and images are loaded before showing them
 	//- feedback for when puzzle is completely solved
 	//- feedback for initial scramble
-	//- prevent overflow of timer, scale it down if too big
 
+	//- wait until all icons and images are loaded before showing them
 	//- try to take up maximum space, by rearranging layout, for example when phone is 
 	//in landscape mode, move the controls and settings of to the sides
 	//- multi touch
@@ -227,6 +295,7 @@
 	//- auto-solve
 
 	//done:
+	//- prevent overflow of timer, scale it down if too big (didn't scale it down, but position=absolute should suffice) (Y)
 	//- circular rows (Y)
 	//- gradient-image rendering when dimension do not fit yet (after recalculate) (Y)
 	//- timer, number of moves (Y)
@@ -1728,6 +1797,19 @@
 				scramble();
 			}
 
+			revealHelper.addEventListener("revealStateChanged", e => {
+				const state = e.detail.revealState;
+				if (state === "opening") {
+					app.pause();
+				}
+				else if (state === "closed") {
+					app.resume();
+				}
+				else if (state === "closing") {
+					app.applyConfig(appSettings.getConfig());
+				}
+			});
+
 			requestRender();
 		})();
 	}
@@ -1770,7 +1852,7 @@
 			let updateTimeLabel = () => {
 				
 				const curTime = getTime();
-				const deltaTime = curTime - prevTime;
+				const deltaTime = (curTime - prevTime);
 				prevTime = curTime;
 				if (state === "paused"){
 					return;
@@ -1837,26 +1919,32 @@
 	}
 </script>
 
-<!-- settings reveal -->
-<script src="CircularRevealHelper.js"></script>
+<!-- pause if page is blurred -->
 <script>
 	{
-		const settingsContainer = document.querySelector("#settings-container");
-		const settingsButton = document.querySelector("#settings-button");
-		const revealHelper = new CircularRevealHelper(settingsButton, settingsContainer);
-		settingsButton.addEventListener("click", () => revealHelper.toggleReveal());
-		revealHelper.addEventListener("revealStateChanged", e => {
-			const state = e.detail.revealState;
-			if (state === "opening"){
+		let hidden, visibilityChange;
+		if (typeof document.hidden !== "undefined") { // Opera 12.10 and Firefox 18 and later support 
+			hidden = "hidden";
+			visibilityChange = "visibilitychange";
+		}
+		else if (typeof document.msHidden !== "undefined") {
+			hidden = "msHidden";
+			visibilityChange = "msvisibilitychange";
+		}
+		else if (typeof document.webkitHidden !== "undefined") {
+			hidden = "webkitHidden";
+			visibilityChange = "webkitvisibilitychange";
+		}
+
+		const handleVisibilityChange = () => {
+			if (document[hidden]) {
 				app.pause();
 			}
-			else if (state === "closed"){
+			else {
 				app.resume();
 			}
-			else if (state === "closing"){
-				app.applyConfig(appSettings.getConfig());
-			}
-		});
+		};
+		document.addEventListener(visibilityChange, handleVisibilityChange, false);
 	}
 </script>
 
@@ -2359,35 +2447,6 @@
 	}
 </script>
 -->
-
-<!-- pause if page is blurred -->
-<script>
-	{
-		let hidden, visibilityChange;
-		if (typeof document.hidden !== "undefined") { // Opera 12.10 and Firefox 18 and later support 
-			hidden = "hidden";
-			visibilityChange = "visibilitychange";
-		} 
-		else if (typeof document.msHidden !== "undefined") {
-			hidden = "msHidden";
-			visibilityChange = "msvisibilitychange";
-		} 
-		else if (typeof document.webkitHidden !== "undefined") {
-			hidden = "webkitHidden";
-			visibilityChange = "webkitvisibilitychange";
-		}
-
-		const handleVisibilityChange = () => {
-			if (document[hidden]) {
-				app.pause();
-			} 
-			else {
-				app.resume();
-			}
-		};
-		document.addEventListener(visibilityChange, handleVisibilityChange, false);
-	}
-</script>
 
 
 </body>

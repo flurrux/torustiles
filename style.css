@@ -43,6 +43,9 @@ canvas {
 	display: flex;
 	flex-direction: column;
 }
+#cur-stats-and-settings-spacer {
+	flex: 1;
+}
 #restart-button {
 	margin-left: 10px;
 	margin-right: 10px;
@@ -61,10 +64,6 @@ canvas {
 }
 .stats-value-wrapper :first-child {
 	margin-right: 10px;
-}
-
-#spacer {
-	flex: 1;
 }
 
 .material-icons {
@@ -106,6 +105,7 @@ canvas {
 }
 #settings-wrapper {
 	z-index: 0;
+	margin: 20px;
 }
 #settings-button {
 	margin-top: 0px;
@@ -114,8 +114,14 @@ canvas {
 	z-index: 1;
 }
 
+#settings-icon-rotation-element {
+	will-change: transform;
+	transition: transform 400ms;
+}
+
 #elapsed-time-element {
 	white-space: nowrap;
+	position: absolute;
 }
 
 #delta-time-element {
