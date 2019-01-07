@@ -1,6 +1,11 @@
+<!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+	<meta charset="UTF-8">
+	<meta name="description" content="a small puzzle game. you might be tempted to call this a rubik's square but it's a torus.">
+	<meta name="keywords" content="game,puzzle,loopover,torustiles">
+	<meta name="author" content="Christian Hoffmann">
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
 </head>
 <body>
 
@@ -238,7 +243,7 @@
 		};
 	}
 
-	//persistence
+	//config persistence
 	{
 		const defaultConfig = {
 			numberOfHorizontalTiles: 3,
@@ -279,14 +284,14 @@
 <script>
 	//ideas and todo:
 	//- persist config and gamestate
-	//- rotate settings icon when clicked
-	//- scale labels by their size, so they always fit
-	//- low poly torus as icon
-	//- make circular reveal less janky
-	//- implement pwa
 	//- feedback for when puzzle is completely solved
 	//- feedback for initial scramble
+	//- make circular reveal less janky
+	//- low poly torus as icon
+	//- implement pwa
 
+	//nice to have: 
+	//- scale labels by their size, so they always fit
 	//- wait until all icons and images are loaded before showing them
 	//- try to take up maximum space, by rearranging layout, for example when phone is 
 	//in landscape mode, move the controls and settings of to the sides
@@ -295,13 +300,14 @@
 	//- auto-solve
 
 	//done:
+	//- rotate settings icon when clicked (Y)
 	//- prevent overflow of timer, scale it down if too big (didn't scale it down, but position=absolute should suffice) (Y)
 	//- circular rows (Y)
 	//- gradient-image rendering when dimension do not fit yet (after recalculate) (Y)
 	//- timer, number of moves (Y)
-	//- functions, well layout settings (Y)
+	//- functioning, well layout settings (Y)
 	//- pause when inactive (window inactive) (Y)
-	//- responsive, goodlooking layout (Y)
+	//- responsive, nice layout (Y)
 </script>
 
 <!-- game -->
@@ -460,7 +466,7 @@
 						const to = point2[prop];
 						const distance1 = to - from;
 						const distance2 = -Math.sign(distance1) * (size - Math.abs(distance1));
-						return Math.abs(distance1) < Math.abs(distance2) ? distance1 : distance2;
+						return Math.abs(distance1) <= Math.abs(distance2) ? distance1 : distance2;
 					});
 				return new Vector2D(comps[0], comps[1]);
 			};
@@ -697,6 +703,41 @@
 							tile.position[moveProp] = positionComp;
 							tile.gridPosition[moveProp] = positionComp;
 						}
+					}
+				};
+				tileManager.setTilePositions = tilePositions => {
+					//validate tilePositions
+					tilePositions.forEach(makeCoordinateValidOnTorus);
+					tilePositions.forEach(vector => vector.transformComponents(Math.round));
+					for (let a = 2; a < tilePositions.length; a++){
+						const positionToCheck = tilePositions[a];
+						for (let b = 0; b < a; b++){
+							const comparedPosition = tilePositions[b];
+							if (comparedPosition === undefined){
+								continue;
+							}
+							if (positionToCheck.equals(comparedPosition)){
+								tilePositions[a] = undefined;
+								break;
+							}
+						}
+					}
+
+					//insert missing positions
+					for (let a = 0; a < getToroidalPointCount(); a++){
+						for (let b = 0; b < getPoloidalPointCount(); b++){
+							const foundTile = tilePositions.find(vec => vec.x === a && vec.y === b);
+							if (foundTile){
+								continue;
+							}
+							let insertionIndex = tilePositions.findIndex(vec => vec === undefined);
+							tilePositions[insertionIndex] = new Vector2D(a, b);
+						}
+					}
+
+					for (let a = 0; a < tiles.length; a++){
+						tiles[a].position.set(tilePositions[a]);
+						tiles[a].gridPosition.set(tilePositions[a]);
 					}
 				};
 
@@ -1730,8 +1771,12 @@
 		window.turnTracker = turnTracker;
 		{
 			let numberOfMoves = 0;
+			Object.defineProperty(turnTracker, "numberOfMoves", { get: () => numberOfMoves });
 			turnTracker.reset = () => {
 				changeNumberOfMoves(0);
+			};
+			turnTracker.init = initialNumberOfMoves => {
+				changeNumberOfMoves(initialNumberOfMoves);
 			};
 
 			const changeNumberOfMoves = newNumberOfMoves => {
@@ -1754,6 +1799,8 @@
 
 		//main
 		(function(){
+
+
 
 			canvas.addEventListener("resized", requestRender);
 			app.addEventListener("configChanged", requestRender);
@@ -1813,7 +1860,7 @@
 			requestRender();
 		})();
 	}
-</script>		
+</script>
 
 <!-- game ui, stats -->
 <script>
@@ -1821,6 +1868,7 @@
 		//game timer
 		{
 			const gameTimer = {};
+			window.gameTimer = gameTimer;
 			const getTime = () => window.performance.now();
 			let state = "not running";
 			gameTimer.start = () => {
@@ -1843,8 +1891,11 @@
 				state = "running";
 				prevTime = performance.now();
 			};
+			gameTimer.init = initialTime => {
+				elapsedTime = initialTime;
+			};
 			Object.defineProperty(gameTimer, "isRunning", { get: () => state === "running" });
-			
+			Object.defineProperty(gameTimer, "elapsedTime", { get: () => elapsedTime });
 	
 			const labelElement = document.querySelector("#elapsed-time-element");
 			let elapsedTime = 0;
@@ -1916,6 +1967,60 @@
 	
 		//restart button
 		document.querySelector("#restart-button").addEventListener("click", () => app.restart());
+	}
+</script>
+
+<!-- game persistence -->
+<script>
+	//gamestate persistence
+	{
+		const savedGameKey = "torustiles-saved-game";
+
+		const loadSavedGame = () => {
+			let loaded = localStorage.getItem(savedGameKey);
+			if (loaded) {
+				loaded = JSON.parse(loaded);
+				if (loaded.tilePositions){
+					const tilePositions = loaded.tilePositions.map(pos => new Vector2D(pos.x, pos.y));
+					tileLayer.setTilePositions(tilePositions);
+				}
+
+				//elapsed time
+				const gameStartedCallback = (e) => {
+					if (e.detail.transition === "start"){
+						gameTimer.init(loaded.elapsedTime);
+					}
+					app.removeEventListener("gameStateChanged", gameStartedCallback);
+				};
+				app.addEventListener("gameStateChanged", gameStartedCallback);
+
+				turnTracker.init(loaded.numberOfMoves);
+
+				app.start();
+			}
+		};
+		loadSavedGame();
+
+		const saveCurrentGame = () => {
+			tileLayer.stopTileRowMoving();
+			const savedGame = {
+				tilePositions: tileLayer.getTiles().map(tile => tile.position),
+				numberOfMoves: turnTracker.numberOfMoves,
+				elapsedTime: gameTimer.elapsedTime,
+				gameState: app.gameState
+			};
+			localStorage.setItem(savedGameKey, JSON.stringify(savedGame));
+		};
+
+		const saveOrDeleteGame = () => {
+			if (app.gameState === "running" || app.gameState === "paused") {
+				saveCurrentGame();
+			}
+			else {
+				localStorage.removeItem(savedGameKey);
+			}
+		};
+		window.addEventListener("beforeunload", saveOrDeleteGame);
 	}
 </script>
 
