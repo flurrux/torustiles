@@ -1,0 +1,28 @@
+﻿ideas and todo:
+- feedback for when puzzle is completely solved, 
+wave animation, green border, green text
+- feedback for initial scramble
+- contact and inspiration footer
+- make circular reveal less janky
+- low poly torus as icon
+- implement pwa
+
+nice to have: 
+- scale labels by their size, so they always fit
+- wait until all icons and images are loaded before showing them
+- try to take up maximum space, by rearranging layout, for example when phone is 
+in landscape mode, move the controls and settings of to the sides
+- multi touch
+- highscores
+- auto-solve
+
+done:
+- persist config and gamestate (Y)
+- rotate settings icon when clicked (Y)
+- prevent overflow of timer, scale it down if too big (didn't scale it down, but position=absolute should suffice) (Y)
+- circular rows (Y)
+- gradient-image rendering when dimension do not fit yet (after recalculate) (Y)
+- timer, number of moves (Y)
+- functioning, well layout settings (Y)
+- pause when inactive (window inactive) (Y)
+- responsive, nice layout (Y)

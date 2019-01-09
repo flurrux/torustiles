@@ -2,6 +2,8 @@ body {
 	display: flex;
 	background-color: #e6e4e4;/*#494545;*/
 	color: #4a4848de;
+	box-sizing: border-box;
+	overflow: hidden;
 }
 #app {
 	box-sizing: border-box;
@@ -10,9 +12,15 @@ body {
 	/*border: 2px solid black;*/
 	display: flex;
 	flex-direction: column;
+
+	position: relative;
+	overflow: hidden;
 }
 canvas {
-	border: 2px solid black;
+	border-width: 2px;
+	border-color: #4a4848de;
+	border-style: solid;
+	border-radius: 3px;
 }
 #canvas-wrapper {
 	flex: 1;
@@ -90,13 +98,15 @@ canvas {
 
 #settings-container {
 	background-color: #bdccf5;
-	color: "black";
+	color: "#4a4848de";
 	display: flex;
 	justify-content: center;
 	align-items: center;
 
+	overflow: hidden;
 	visibility: hidden;
-	will-change: clip;
+	will-change: transform;
+	/*will-change: clip-path;*/
 	/*transition: clip-path 300ms;*/
 
 	font-family: "Roboto","Helvetica","Arial",sans-serif;
@@ -106,6 +116,7 @@ canvas {
 #settings-wrapper {
 	z-index: 0;
 	margin: 20px;
+	will-change: transform;
 }
 #settings-button {
 	margin-top: 0px;
@@ -154,4 +165,15 @@ canvas {
 .mdl-select {
 	margin-left: 20px;
 	width: fit-content;
+}
+
+#footer-links {
+	margin-left: 10px;
+	margin-right: 10px;
+}
+#footer-links a {
+	margin-left: 5px;
+	margin-right: 5px;
+	text-decoration: none;
+	color: unset;
 }

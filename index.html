@@ -45,7 +45,7 @@
 			</div>
 		</div>
 		<div id="cur-stats-and-settings-spacer"></div>
-		<button id="settings-button" class="mdl-button mdl-js-button mdl-button--fab mdl-js-ripple-effect">
+		<button id="settings-button" class="mdl-button mdl-js-button mdl-button--fab">
 			<div id="settings-icon-rotation-element">
 				<i class="material-icons">settings</i>
 			</div>
@@ -55,6 +55,13 @@
 		<div class="canvas-padder" id="left-canvas-padder"></div>
 		<canvas></canvas>
 		<div class="canvas-padder"></div>
+	</div>
+	<div style="display: flex; justify-content: center;">
+		<div id="footer-links" style="width: auto;">
+			<a href="">contact</a>
+			·
+			<a href="https://www.youtube.com/watch?v=95rtiz-V2zM" target="_blank">inspiration</a>
+		</div>
 	</div>
 	<div id="settings-container" class="overlay">
 		<div id="settings-wrapper">
@@ -134,6 +141,30 @@
 <!-- general util -->
 <script>
 
+	//visibility change event
+	{
+		let hidden, visibilityChange;
+		if (typeof document.hidden !== "undefined") { // Opera 12.10 and Firefox 18 and later support 
+			hidden = "hidden";
+			visibilityChange = "visibilitychange";
+		}
+		else if (typeof document.msHidden !== "undefined") {
+			hidden = "msHidden";
+			visibilityChange = "msvisibilitychange";
+		}
+		else if (typeof document.webkitHidden !== "undefined") {
+			hidden = "webkitHidden";
+			visibilityChange = "webkitvisibilitychange";
+		}
+		const handleVisibilityChange = () => {
+			const isPageVisible = !document[hidden];
+			document.dispatchEvent(new CustomEvent("pageVisibilityChanged", { detail: {
+				pageVisible: isPageVisible
+			}}));
+		};
+		document.addEventListener(visibilityChange, handleVisibilityChange, false);
+	}
+
 	const createRectImageData = (ctx, width, height, getPixelAt) => {
 		width = Math.ceil(width);
 		height = Math.ceil(height);
@@ -181,6 +212,30 @@
 			ctx.backingStorePixelRatio || 1;
 
 		return dpr / bsr;
+	};
+
+	const RequestBatcher = class {
+		constructor(fulfilmentFunc){
+			this._requested = false;
+			this._fulfillAtNextFrame = true;
+			this.fulfilmentFunc = fulfilmentFunc;
+		}
+		request(){
+			if (!this._requested){
+				this._requested = true;
+				if (this._fulfillAtNextFrame){
+					requestAnimationFrame(() => this.fulfill());
+				}
+				else {
+					this.onRequested();
+				}
+			}
+		}
+		fulfill() {
+			this.fulfilmentFunc();
+			this._requested = false;
+		}
+		onRequested(){}
 	};
 
 </script>
@@ -269,7 +324,11 @@
 			const config = appSettings.getConfig();
 			localStorage.setItem("torustiles-config", JSON.stringify(config));
 		};
-		window.addEventListener("beforeunload", () => saveConfig());
+		document.addEventListener("pageVisibilityChanged", e => {
+			if (!e.detail.pageVisible) {
+				saveConfig();
+			}
+		});
 		revealHelper.addEventListener("revealStateChanged", e => {
 			const state = e.detail.revealState;
 			if (state === "closed") {
@@ -278,36 +337,6 @@
 		});
 	}
 
-</script>
-
-<!-- ideas -->
-<script>
-	//ideas and todo:
-	//- persist config and gamestate
-	//- feedback for when puzzle is completely solved
-	//- feedback for initial scramble
-	//- make circular reveal less janky
-	//- low poly torus as icon
-	//- implement pwa
-
-	//nice to have: 
-	//- scale labels by their size, so they always fit
-	//- wait until all icons and images are loaded before showing them
-	//- try to take up maximum space, by rearranging layout, for example when phone is 
-	//in landscape mode, move the controls and settings of to the sides
-	//- multi touch
-	//- highscores
-	//- auto-solve
-
-	//done:
-	//- rotate settings icon when clicked (Y)
-	//- prevent overflow of timer, scale it down if too big (didn't scale it down, but position=absolute should suffice) (Y)
-	//- circular rows (Y)
-	//- gradient-image rendering when dimension do not fit yet (after recalculate) (Y)
-	//- timer, number of moves (Y)
-	//- functioning, well layout settings (Y)
-	//- pause when inactive (window inactive) (Y)
-	//- responsive, nice layout (Y)
 </script>
 
 <!-- game -->
@@ -899,13 +928,23 @@
 					return createRectImage(rectSize, rectSize, getPixelAt);
 				};
 				const updateGradientData = (tiles) => {
-					return Promise.all(tiles.map(tile => {
+					let updateImageOfTile = tile => {
 						const initialPosition = tile.initialPosition;
 						const continuous = config.style.gradient === "continuous";
 						return createRectGradientImage(initialPosition.x, initialPosition.y, continuous)
-						.then(img => tileGradientMap.set(tile, img))
-						.catch(e => {})
-					}));
+							.then(img => tileGradientMap.set(tile, img))
+							.catch(e => { })
+					};
+					//return Promise.all(tiles.map(updateImageOfTile));
+				
+					let prevPromise = Promise.resolve();
+					for (let a = 0; a < tiles.length; a++){
+						prevPromise = prevPromise.then(() => {
+							requestRender();
+							return updateImageOfTile(tiles[a]);
+						});
+					}
+					return prevPromise;
 				};
 				const updateImageDataAndRepaint = () => {
 					if (["continuous", "discrete"].includes(config.style.gradient)) {
@@ -915,9 +954,11 @@
 					}
 				};
 				
-				canvas.addEventListener("resized", updateImageDataAndRepaint);
-				torusSpace.addEventListener("pointCountChanged", updateImageDataAndRepaint);
-				app.addEventListener("gradientConfigChanged", updateImageDataAndRepaint);
+				let imageUpdateBatcher = new RequestBatcher(() => updateImageDataAndRepaint());
+
+				canvas.addEventListener("resized", () => imageUpdateBatcher.request());
+				torusSpace.addEventListener("pointCountChanged", () => imageUpdateBatcher.request());
+				app.addEventListener("gradientConfigChanged", () => imageUpdateBatcher.request());
 			}
 			
 			//rendering ###
@@ -955,6 +996,14 @@
 						if (backgroundImage.naturalWidth !== imageTargetWidth){
 							ctx.scaleUniformly(imageTargetWidth / deviceTileSize);
 						}
+						
+						if (tileImageAlphaMap){
+							const alpha = tileImageAlphaMap.get(tile);
+							if (alpha !== undefined){
+								ctx.globalAlpha = alpha;
+							}
+						}
+
 						ctx.drawImage(backgroundImage, 0, 0);
 						ctx.restore();
 					}
@@ -963,7 +1012,7 @@
 				//outline
 				{
 					ctx.lineWidth = 0.025;
-					ctx.strokeStyle = "black";
+					ctx.strokeStyle = "#191919";
 					ctx.strokeRect(0, 0, 1, 1);
 				}
 
@@ -992,6 +1041,63 @@
 				render: ctx => renderTilesOnRect(ctx)
 			};
 			renderComponents.push(rectShapeRenderComponent);
+
+
+			//wave animation
+			let tileImageAlphaMap, playWaveAnimation;
+			{
+				tileImageAlphaMap = null;
+				const waveCenter = new Vector2D(2.4, 1.7);
+				let waveRadius = 0;
+				let waveSpreadSpeed = 10;
+				let playing = false;
+
+				playWaveAnimation = waveCenterPoint => {
+					if (playing){
+						return;
+					}
+					playing = true;
+					waveCenter.set(waveCenterPoint);
+					waveRadius = 0;
+					
+					tileImageAlphaMap = new WeakMap();
+					for (let tile of getTiles()) {
+						tileImageAlphaMap.set(tile, 1);
+					}
+					prevTime = window.performance.now();
+					loop();
+				};
+				
+				const updateWaveAlpha = () => {
+					for (let tile of getTiles()){
+						const tilePosition = tile.position;
+						const tilePositionFromCircle = waveCenter.vectorTo(tilePosition);
+						const distance = tilePositionFromCircle.getMagnitude() - waveRadius;
+						//let alpha = MathUtil.clamp(-0.5, 0.5, distance);
+						//alpha = Math.cos((alpha - 0.5) * 2 * Math.PI) * 0.5 + 0.5;
+						let alpha = MathUtil.clamp(0, 2, -distance) / 2;
+						alpha = Math.cos((alpha + 1) * Math.PI) * 0.5 + 0.5;
+						tileImageAlphaMap.set(tile, alpha);
+					}
+				};
+
+				let prevTime = performance.now();
+				const loop = () => {
+					const curTime = performance.now();
+					const deltaTime = curTime - prevTime;
+					waveRadius += deltaTime * 0.001 * waveSpreadSpeed;
+					prevTime = curTime;
+					updateWaveAlpha();
+					requestRender();
+					if (getTiles().some(tile => 1 - tileImageAlphaMap.get(tile) > 1e-2)){
+						requestAnimationFrame(loop);
+					}
+					else {
+						playing = false;
+						tileImageAlphaMap = null;
+					}
+				};
+			}
 		}
 
 		//shape: "disc" ###
@@ -1800,7 +1906,15 @@
 		//main
 		(function(){
 
-
+			document.addEventListener("pageVisibilityChanged", e => {
+				const visible = e.detail.pageVisible;
+				if (visible){
+					app.resume();
+				}
+				else {
+					app.pause();
+				}
+			});
 
 			canvas.addEventListener("resized", requestRender);
 			app.addEventListener("configChanged", requestRender);
@@ -2020,36 +2134,11 @@
 				localStorage.removeItem(savedGameKey);
 			}
 		};
-		window.addEventListener("beforeunload", saveOrDeleteGame);
-	}
-</script>
-
-<!-- pause if page is blurred -->
-<script>
-	{
-		let hidden, visibilityChange;
-		if (typeof document.hidden !== "undefined") { // Opera 12.10 and Firefox 18 and later support 
-			hidden = "hidden";
-			visibilityChange = "visibilitychange";
-		}
-		else if (typeof document.msHidden !== "undefined") {
-			hidden = "msHidden";
-			visibilityChange = "msvisibilitychange";
-		}
-		else if (typeof document.webkitHidden !== "undefined") {
-			hidden = "webkitHidden";
-			visibilityChange = "webkitvisibilitychange";
-		}
-
-		const handleVisibilityChange = () => {
-			if (document[hidden]) {
-				app.pause();
+		document.addEventListener("pageVisibilityChanged", e => {
+			if (!e.detail.pageVisible) {
+				saveOrDeleteGame();
 			}
-			else {
-				app.resume();
-			}
-		};
-		document.addEventListener(visibilityChange, handleVisibilityChange, false);
+		});
 	}
 </script>
 
