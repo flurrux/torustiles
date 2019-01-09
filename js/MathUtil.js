@@ -53,6 +53,15 @@
 		}
 		return val;
 	};
+	MathUtil.normalize = (from, to, val) => {
+		return (val - from) / (to - from);
+	};
+	MathUtil.map = (fromStart, fromEnd, toStart, toEnd, val) => {
+		return MathUtil.lerp(toStart, toEnd, MathUtil.normalize(fromStart, fromEnd, val));
+	};
+	MathUtil.mapClamped = (fromStart, fromEnd, toStart, toEnd, val) => {
+		return MathUtil.clamp(toStart, toEnd, MathUtil.map(fromStart, fromEnd, toStart, toEnd, val));
+	};
 	MathUtil.loopNum = (minVal, maxVal, val) => {
 		const localVal = val - minVal;
 		const interval = maxVal - minVal;

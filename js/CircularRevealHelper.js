@@ -15,7 +15,6 @@ class CircularRevealHelper extends EventTarget {
 			position: absolute; width: 2px; height: 2px;
 			background-color: #bdccf5; will-change: transform; border-radius: 50%;
 		`);
-		document.body.appendChild(this._waveElement);
 
 		//this.boundingRectMap = null;
 	}
@@ -51,6 +50,7 @@ class CircularRevealHelper extends EventTarget {
 		const isRevealAnimationRunning = currentAnimations.length > 0;
 		
 		//get the target state
+		let targetState;
 		{
 			if (isRevealAnimationRunning){
 				targetState = runningAnimationTargetState !== "open" ? "open" : "close";
@@ -84,10 +84,9 @@ class CircularRevealHelper extends EventTarget {
 				initialRadius = this._waveElement.offsetWidth * 0.5 * matrixScale;
 			}
 		}
-
-		//if (targetState === "open"){
-		//	revealedElement.style.visibility = "visible";
-		//}
+		
+		//revealedElement.style.backgroundColor = "transparent";
+		revealedElement.style.visibility = "hidden";
 
 		const data = this.getClipPathData();
 		if (initialRadius === null){
@@ -116,19 +115,27 @@ class CircularRevealHelper extends EventTarget {
 			const sourceElCenter = CircularRevealHelper.getCenterOfBoundingRect(this.getRectOf(this.sourceElement));
 			const translation = [sourceElCenter[0] - waveElCenter[0], sourceElCenter[1] - waveElCenter[1]];
 			const translationString = `translate(${translation[0]}px, ${translation[1]}px)`;
+			const [fromProgress, toProgress] = [initialRadius / data.radius, targetRadius / data.radius];
 
 			currentAnimations.push(this._waveElement.animate(
 				[
-					{ transform: `${translationString} scale(${initialRadius / data.radius})` },
-					{ transform: `${translationString} scale(${targetRadius / data.radius})` }
+					{ transform: `${translationString} scale(${fromProgress})` },
+					{ transform: `${translationString} scale(${toProgress})` }
 				],
 				{ duration: duration }
 			));
+			/*	
+			currentAnimations.push(this.revealedElement.animate(
+				[
+					{ opacity: fromProgress },
+					{ opacity: toProgress }
+				],
+				{ duration: duration }
+			));*/
+			
 		}
 
-		if (targetState === "close"){
-			this.revealedElement.style.visibility = "hidden";
-		}
+		
 
 		this._setRevealState(targetState === "open" ? "opening" : "closing");
 		currentAnimations[0].onfinish = () => {
@@ -137,6 +144,7 @@ class CircularRevealHelper extends EventTarget {
 				revealedElement.style.visibility = "hidden";
 			}
 			else {
+				revealedElement.style.backgroundColor = "";
 				revealedElement.style.visibility = "visible";
 				setChildrenDisplay("unset");
 			}

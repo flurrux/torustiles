@@ -3,7 +3,8 @@
 		constructor(dragElement){
 			this._dragging = false;
 			this._dragElement = dragElement;
-	
+			this._touchId = null;
+
 			this._startDrag = e => {
 				this._dragging = true;
 				this._invokeMouseEventMethod("onDragStart", e);
@@ -51,13 +52,32 @@
 			event.preventDefault();
 			let viewportPoint = null;
 			if (event.type.includes("touch")){
-				const touch = event.changedTouches[0];
+				if (this._touchId === null){
+					if (event.type.includes("start")){
+						this._touchId = event.changedTouches[0].identifier;
+					}
+					else {
+						return;
+					}
+				}
+
+				const touch = Array.from(event.changedTouches).find(touch => touch.identifier === this._touchId);
+				if (touch === undefined){
+					return;
+				}
+				if (event.type.includes("end")) {
+					this._touchId = null;
+				}
 				viewportPoint = new Vector2D(touch.clientX, touch.clientY);
 			}
 			else {
 				viewportPoint = new Vector2D(event.clientX, event.clientY);
 			}
-	
+			
+			if (event.type.includes("end")){
+
+			}
+
 			const dragElementPoint = Vector2D.vectorBetween(this._dragElement.getBoundingClientRect(), viewportPoint);
 			this[methodName]({
 				srcElement: event.srcElement,

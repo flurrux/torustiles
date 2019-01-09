@@ -16,13 +16,13 @@
 
 <link rel="stylesheet" href="style.css" />
 
-<script src="MathUtil.js"></script>
-<script src="Rect2D.js"></script>
-<script src="Vector2D.js"></script>
-<script src="Animation.js"></script>
-<script src="DragHelper.js"></script>
-<script src="DraggableNumber.js"></script>
-<script src="CtxUtil.js"></script>
+<script src="js/MathUtil.js"></script>
+<script src="js/Rect2D.js"></script>
+<script src="js/Vector2D.js"></script>
+<script src="js/Animation.js"></script>
+<script src="js/DragHelper.js"></script>
+<script src="js/DraggableNumber.js"></script>
+<script src="js/CtxUtil.js"></script>
 
 <div id="app">
 	<div id="game-controls" >
@@ -1049,7 +1049,8 @@
 				tileImageAlphaMap = null;
 				const waveCenter = new Vector2D(2.4, 1.7);
 				let waveRadius = 0;
-				let waveSpreadSpeed = 10;
+				let maxWaveRadius = 0;
+				let waveSpreadSpeed = 8;
 				let playing = false;
 
 				playWaveAnimation = waveCenterPoint => {
@@ -1059,7 +1060,12 @@
 					playing = true;
 					waveCenter.set(waveCenterPoint);
 					waveRadius = 0;
-					
+					const cornerPoints = [
+						new Vector2D(0, 0), new Vector2D(getWidth(), 0), 
+						new Vector2D(0, getHeight()), new Vector2D(getWidth(), getHeight())
+					];
+					maxWaveRadius = Math.max(...cornerPoints.map(point => waveCenter.distanceTo(point))) + 1;
+
 					tileImageAlphaMap = new WeakMap();
 					for (let tile of getTiles()) {
 						tileImageAlphaMap.set(tile, 1);
@@ -1073,10 +1079,10 @@
 						const tilePosition = tile.position;
 						const tilePositionFromCircle = waveCenter.vectorTo(tilePosition);
 						const distance = tilePositionFromCircle.getMagnitude() - waveRadius;
-						//let alpha = MathUtil.clamp(-0.5, 0.5, distance);
-						//alpha = Math.cos((alpha - 0.5) * 2 * Math.PI) * 0.5 + 0.5;
-						let alpha = MathUtil.clamp(0, 2, -distance) / 2;
-						alpha = Math.cos((alpha + 1) * Math.PI) * 0.5 + 0.5;
+						let alpha = MathUtil.mapClamped(1.2, -1.2, 0, 2, distance);
+						alpha = Math.cos(alpha * Math.PI) * 0.5 + 0.5;
+						//let alpha = MathUtil.clamp(0, 2, -distance) / 2;
+						//alpha = Math.cos((alpha + 1) * Math.PI) * 0.5 + 0.5;
 						tileImageAlphaMap.set(tile, alpha);
 					}
 				};
@@ -1089,7 +1095,7 @@
 					prevTime = curTime;
 					updateWaveAlpha();
 					requestRender();
-					if (getTiles().some(tile => 1 - tileImageAlphaMap.get(tile) > 1e-2)){
+					if (waveRadius < maxWaveRadius){
 						requestAnimationFrame(loop);
 					}
 					else {
@@ -1098,6 +1104,22 @@
 					}
 				};
 			}
+			//play wave animation when finished
+			app.addEventListener("gameStateChanged", e => {
+				if (app.gameState === "finished"){
+					const dragger = getCurrentDragger();
+					if (!dragger){
+						return;
+					}
+					let currentMousePoint = dragger.currentMousePoint;
+					if (!currentMousePoint){
+						return;
+					}
+					const torusPoint = currentMousePoint.multiply(1 / tileSize);
+					makeCoordinateValidOnTorus(torusPoint);
+					playWaveAnimation(torusPoint);
+				}
+			});
 		}
 
 		//shape: "disc" ###
@@ -1316,10 +1338,15 @@
 		
 
 		//Tile Dragging ###
+		let getCurrentDragger;
 		{
 			class TileDragger extends DragHelper {
 				constructor(canvas) {
 					super(canvas);
+					this._currentMousePoint = null;
+				}
+				get currentMousePoint(){
+					return this._currentMousePoint;
 				}
 				deactivate() {
 					this.detach();
@@ -1338,6 +1365,13 @@
 				}
 				get isDragging() {
 					this._dragging;
+				}
+
+				onDragStart(e){
+					this._currentMousePoint = e.localMousePoint;
+				}
+				onDrag(e) {
+					this._currentMousePoint = e.localMousePoint;
 				}
 			}
 			const CarykhTileDragger = class extends TileDragger {
@@ -1395,9 +1429,11 @@
 					}
 				}
 				onDragStart(e) {
+					super.onDragStart(e);
 					this._prevMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
 				}
 				onDrag(e) {
+					super.onDragStart(e);
 					const prevMouseGridPoint = this._prevMouseGridPoint;
 					const curMouseGridPoint = this._getMouseGridPoint(e.localMousePoint);
 					if (curMouseGridPoint && prevMouseGridPoint){
@@ -1806,6 +1842,8 @@
 
 
 				onDragStart(e) {
+					super.onDragStart(e);
+
 					this.clickCount++;
 					if (this.clickCount > 1) {
 						//this.onDrag(e);
@@ -1825,6 +1863,7 @@
 				}
 				
 				onDrag(e) {
+					super.onDragStart(e);
 					this._handleDragDirection(e);
 
 					const tileSpacePoint = this._canvasPointToTileSpace(e.localMousePoint);
@@ -1845,6 +1884,7 @@
 				}
 				onDragEnd(e) {
 
+					super.onDragEnd(e);
 					this._dragVectorQueue = [];
 					this._currentDragDirection = "unknown";
 
@@ -1862,6 +1902,7 @@
 			};
 
 			let currentDragger = null;
+			getCurrentDragger = () => currentDragger;
 			const updateDragger = () => {
 				if (currentDragger) {
 					currentDragger.deactivate();
@@ -1970,6 +2011,24 @@
 					app.applyConfig(appSettings.getConfig());
 				}
 			});
+
+			//turn text green when finished
+			{
+				const setColorOfText = (color) => {
+					[	
+						document.querySelector("#number-moves-element"), 
+						document.querySelector("#elapsed-time-element")
+					].forEach(el => el.style.color = color);
+				};
+				app.addEventListener("gameStateChanged", e => {
+					if (e.detail.transition === "finish") {
+						setColorOfText("green");
+					}
+					else if (e.detail.prevGameState === "finished") {
+						setColorOfText("unset");
+					}
+				});
+			}
 
 			requestRender();
 		})();

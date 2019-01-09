@@ -1,13 +1,11 @@
 ﻿ideas and todo:
-- feedback for when puzzle is completely solved, 
-wave animation, green border, green text
-- feedback for initial scramble
-- contact and inspiration footer
-- make circular reveal less janky
 - low poly torus as icon
 - implement pwa
+- contact email or some page 
 
 nice to have: 
+- feedback for initial scramble
+- make circular reveal nicer, fade in
 - scale labels by their size, so they always fit
 - wait until all icons and images are loaded before showing them
 - try to take up maximum space, by rearranging layout, for example when phone is 
@@ -17,6 +15,10 @@ in landscape mode, move the controls and settings of to the sides
 - auto-solve
 
 done:
+- prevent multitouch (Y)
+- feedback for when puzzle is completely solved, 
+wave animation, green border, green text (Y)
+- contact and inspiration footer (Y)
 - persist config and gamestate (Y)
 - rotate settings icon when clicked (Y)
 - prevent overflow of timer, scale it down if too big (didn't scale it down, but position=absolute should suffice) (Y)
