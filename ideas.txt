@@ -1,9 +1,11 @@
 ﻿ideas and todo:
-- low poly torus as icon
-- implement pwa
+- icon: 3x3 field with the horizontal middle row slightly shifted
 - contact email or some page 
+- explore gradients, option for random gradient everytime
+- implement pwa
 
 nice to have: 
+- low poly torus as icon
 - feedback for initial scramble
 - make circular reveal nicer, fade in
 - scale labels by their size, so they always fit
@@ -15,6 +17,7 @@ in landscape mode, move the controls and settings of to the sides
 - auto-solve
 
 done:
+- change top bar background color when game finished (Y)
 - prevent multitouch (Y)
 - feedback for when puzzle is completely solved, 
 wave animation, green border, green text (Y)

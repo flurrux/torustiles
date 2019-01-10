@@ -37,7 +37,11 @@ canvas {
 	display: flex;
 	flex-direction: row;
 	align-items: center;
-	margin-bottom: 33px;
+	padding-bottom: 20px;
+	background-color: rgb(0,150,136); /*#49c4c4;*/
+	transition: background-color 500ms;
+	color: #d6d6d6;
+	box-shadow: 0px 1px 5px 0.4px grey;
 }
 #essential-controls {
 	display: flex;
@@ -62,6 +66,8 @@ canvas {
 
 	width: 56px !important;
 	height: 56px !important;
+
+	background-color: #cececec2;
 }
 .stats-value-wrapper {
 	margin-left: 15px;
@@ -75,7 +81,7 @@ canvas {
 }
 
 .material-icons {
-	color: #4a4848de;
+	/*color: #4a4848de;*/
 	font-size: 30px !important;
 }
 .mdl-button--fab .material-icons {
@@ -123,6 +129,9 @@ canvas {
 	background: #ffffff00; 
 	box-shadow: none;
 	z-index: 1;
+	color: #e3e3e3;
+
+	transition: color 300ms;
 }
 
 #settings-icon-rotation-element {

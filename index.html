@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.brown-deep_orange.min.css" />
 <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
 
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="css/style.css" />
 
 <script src="js/MathUtil.js"></script>
 <script src="js/Rect2D.js"></script>
@@ -241,7 +241,7 @@
 </script>
 
 <!-- settings reveal -->
-<script src="CircularRevealHelper.js"></script>
+<script src="js/CircularRevealHelper.js"></script>
 <script>
 	{
 		const settingsContainer = document.querySelector("#settings-container");
@@ -265,6 +265,20 @@
 			}
 			else if (state === "closing") {
 				setRotation(0);
+			}
+		});
+	}
+
+	//recolor settings icon for better contrast
+	{
+		const settingsElement = document.querySelector("#settings-button");
+		revealHelper.addEventListener("revealStateChanged", e => {
+			const state = e.detail.revealState;
+			if (state === "opening") {
+				settingsElement.style.color = "#4a4848de";
+			}
+			else if (state === "closing") {
+				settingsElement.style.color = "";
 			}
 		});
 	}
@@ -1944,94 +1958,109 @@
 		}
 		
 
-		//main
-		(function(){
 
-			document.addEventListener("pageVisibilityChanged", e => {
-				const visible = e.detail.pageVisible;
-				if (visible){
-					app.resume();
-				}
-				else {
-					app.pause();
+
+		document.addEventListener("pageVisibilityChanged", e => {
+			const visible = e.detail.pageVisible;
+			if (visible){
+				app.resume();
+			}
+			else {
+				app.pause();
+			}
+		});
+
+		canvas.addEventListener("resized", requestRender);
+		app.addEventListener("configChanged", requestRender);
+
+		//finish the game of all rows just stopped moving and 
+		//all tiles are in their initial position
+		tileLayer.addEventListener("rowMovingStopped", e => {
+			if (app.gameState === "running" && tileLayer.areTileGridPositionsInInitialState()) {
+				app.finish();
+			}
+		});
+
+		//connect turn tracker to app state
+		{
+			//start the game if the first move was just  made
+			turnTracker.addEventListener("numberOfMovesChanged", e => {
+				if (app.gameState !== "finished" && e.detail.numberOfMovesBefore === 0 && e.detail.numberOfMovesDelta > 0){
+					app.start();
 				}
 			});
-
-			canvas.addEventListener("resized", requestRender);
-			app.addEventListener("configChanged", requestRender);
-
-			//finish the game of all rows just stopped moving and 
-			//all tiles are in their initial position
-			tileLayer.addEventListener("rowMovingStopped", e => {
-				if (app.gameState === "running" && tileLayer.areTileGridPositionsInInitialState()) {
-					app.finish();
+			app.addEventListener("gameStateChanged", e => {
+				if (e.detail.transition === "restart"){
+					turnTracker.reset();
 				}
 			});
+		}
 
-			//connect turn tracker to app state
-			{
-				//start the game if the first move was just  made
-				turnTracker.addEventListener("numberOfMovesChanged", e => {
-					if (app.gameState !== "finished" && e.detail.numberOfMovesBefore === 0 && e.detail.numberOfMovesDelta > 0){
-						app.start();
-					}
-				});
-				app.addEventListener("gameStateChanged", e => {
-					if (e.detail.transition === "restart"){
-						turnTracker.reset();
-					}
-				});
-			}
-
-			//scramble on start
-			{
-				const scramble = () => {
-					if (config.scrambleOnStart){
-						tileLayer.performRandomMoves(torusSpace.toroidalPointCount * torusSpace.poloidalPointCount * 4);
-					}
-				};
-				app.addEventListener("gameStateChanged", e => {
-					if (e.detail.transition === "restart"){
-						scramble();
-						requestRender();
-					}
-				});
-				scramble();
-			}
-
-			revealHelper.addEventListener("revealStateChanged", e => {
-				const state = e.detail.revealState;
-				if (state === "opening") {
-					app.pause();
+		//scramble on start
+		{
+			const scramble = () => {
+				if (config.scrambleOnStart){
+					tileLayer.performRandomMoves(torusSpace.toroidalPointCount * torusSpace.poloidalPointCount * 4);
 				}
-				else if (state === "closed") {
-					app.resume();
-				}
-				else if (state === "closing") {
-					app.applyConfig(appSettings.getConfig());
+			};
+			app.addEventListener("gameStateChanged", e => {
+				if (e.detail.transition === "restart"){
+					scramble();
+					requestRender();
 				}
 			});
+			scramble();
+		}
 
-			//turn text green when finished
-			{
-				const setColorOfText = (color) => {
-					[	
-						document.querySelector("#number-moves-element"), 
-						document.querySelector("#elapsed-time-element")
-					].forEach(el => el.style.color = color);
-				};
-				app.addEventListener("gameStateChanged", e => {
-					if (e.detail.transition === "finish") {
-						setColorOfText("green");
-					}
-					else if (e.detail.prevGameState === "finished") {
-						setColorOfText("unset");
-					}
-				});
+		revealHelper.addEventListener("revealStateChanged", e => {
+			const state = e.detail.revealState;
+			if (state === "opening") {
+				app.pause();
 			}
+			else if (state === "closed") {
+				app.resume();
+			}
+			else if (state === "closing") {
+				app.applyConfig(appSettings.getConfig());
+			}
+		});
 
-			requestRender();
-		})();
+		//turn text green when finished
+		/*
+		{
+			const setColorOfText = (color) => {
+				[	
+					document.querySelector("#number-moves-element"), 
+					document.querySelector("#elapsed-time-element")
+				].forEach(el => el.style.color = color);
+			};
+			app.addEventListener("gameStateChanged", e => {
+				if (e.detail.transition === "finish") {
+					setColorOfText("green");
+				}
+				else if (e.detail.prevGameState === "finished") {
+					setColorOfText("unset");
+				}
+			});
+		}
+		*/
+		
+		//turn top bar green when finished
+		{
+			const setColor = color => {
+				document.querySelector("#game-controls").style.backgroundColor = color;
+			};
+			app.addEventListener("gameStateChanged", e => {
+				if (e.detail.transition === "finish") {
+					setColor("#50ab0a");
+				}
+				else if (e.detail.prevGameState === "finished") {
+					setColor("");
+				}
+			});
+		}
+
+		requestRender();
 	}
 </script>
 
