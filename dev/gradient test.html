@@ -1,0 +1,59 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+</head>
+
+<body>
+
+	<script src="../js/MathUtil.js"></script>
+	<script src="../js/CtxUtil.js"></script>
+
+	<canvas width="1000" height="700" style="border: 2px solid black;"></canvas>
+
+	<script>
+		{
+			//canvas, canvas sizing, ctx ###
+			let canvas, ctx;
+			{
+				canvas = document.querySelector("canvas");
+				ctx = canvas.getContext("2d");
+			}
+
+			const lerpColors = (a, b, t) => a.map((c1, ind) => MathUtil.lerp(c1, b[ind], t));
+
+			const render = () => {
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.save();
+
+				let cornerColors;
+				cornerColors = [
+					[117, 166, 244], [159, 117, 244], [172, 229, 126], [229, 168, 126]
+				];
+				cornerColors = [0, 1, 2, 3].map(ind => {
+					return [Math.random() * 255, Math.random() * 255, Math.random() * 255];
+				});
+
+				for (let y = 0; y < canvas.height; y++){
+					const yProgress = y / (canvas.height - 1);
+					const leftColor = lerpColors(cornerColors[0], cornerColors[2], yProgress);
+					const rightColor = lerpColors(cornerColors[1], cornerColors[3], yProgress);
+					for (let x = 0; x < canvas.width; x++){
+						const xProgress = x / (canvas.width - 1);
+						const color = lerpColors(leftColor, rightColor, xProgress);
+						ctx.fillStyle = `rgb(${color.map(c => Math.floor(c)).join(",")})`;
+						ctx.fillRect(x, y, 1, 1);
+					}
+				}
+
+				ctx.restore();
+			};
+			window.render = render;
+			render();
+		}
+	</script>
+
+
+</body>
+
+</html>
