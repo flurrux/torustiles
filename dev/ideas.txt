@@ -1,10 +1,13 @@
 ﻿ideas and todo:
 - icon: 3x3 field with the horizontal middle row slightly shifted
-- contact email or some page 
 - explore gradients, option for random gradient everytime
+- contact email or some page 
 - implement pwa
 
+
+
 nice to have: 
+- improve circular reveal, connect settings-button-color-change-duration to circular reveal duration
 - low poly torus as icon
 - feedback for initial scramble
 - make circular reveal nicer, fade in
