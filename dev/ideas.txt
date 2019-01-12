@@ -1,12 +1,9 @@
 ﻿ideas and todo:
 
 - implement pwa
-- performance of gradient creation
-- when device is rotated, it scales down smoothly which triggers the gradient creation every frame and slows the framerate down massively
-
-
 
 nice to have: 
+- performance of gradient creation
 - contact email or some page 
 - improve circular reveal, connect settings-button-color-change-duration to circular reveal duration
 - low poly torus as icon
@@ -21,6 +18,7 @@ in landscape mode, move the controls and settings of to the sides
 - auto-solve
 
 done:
+- when device is rotated, it scales down smoothly which triggers the gradient creation every frame and slows the framerate down massively (Y)
 - icon: 3x3 field with the horizontal middle row slightly shifted (Y)
 - persist gradient (Y)
 - explore gradients, option for random gradient everytime (Y)

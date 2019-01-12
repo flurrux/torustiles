@@ -80,9 +80,9 @@
 			<!-- tile-board size -->
 			<div id="tile-board-size-container">
 				<span class="size-label">width</span>
-				<draggable-number id="width-input" min="2" max="30" value="3" spacing="50"></draggable-number>
+				<draggable-number id="width-input" min="2" max="20" value="3" spacing="50"></draggable-number>
 				<span class="size-label">height</span>
-				<draggable-number id="height-input" min="2" max="30" value="3" spacing="50"></draggable-number>
+				<draggable-number id="height-input" min="2" max="20" value="3" spacing="50"></draggable-number>
 			</div>
 			<!-- fill style -->
 			<div>
@@ -836,7 +836,6 @@
 
 			const onCanvasNeedsResize = () => {
 				const canvasWrapper = canvas.parentElement;
-				
 				canvas.dispatchEvent(new CustomEvent("needsResize", { detail: {
 					availableWidth: canvasWrapper.offsetWidth,
 					availableHeight: canvasWrapper.offsetHeight
@@ -935,7 +934,7 @@
 
 			//gradient
 			let tileGradientMap;
-			{	
+			{
 				//general gradient util
 				let lerpColors, getRandomCornerColorsByCircle;
 				{
@@ -1148,12 +1147,17 @@
 						
 						const horizontalProgressStride = 1 / (width - 1);
 						const verticalProgressStride = 1 / (height - 1);
-						const leftDownStride = getColorVectorScaled(leftDownVector, verticalProgressStride);
+						let leftDownStride = getColorVectorScaled(leftDownVector, verticalProgressStride);
 						//const rightDownStride = getColorVectorScaled(rightDownVector, verticalProgressStride);
 						
 						let currentLeftPoint = cornerColors[0].slice();
 						let currentHorizontalVector = initialHorizontalVector.slice();
 						
+						if (config.style.gradient === "discrete"){
+							leftDownStride = [0, 0, 0, 0];
+							currentHorizontalVector = [0, 0, 0, 0];
+						}
+
 						//const leftColor = cornerColors[0].slice();
 						//const rightColor = cornerColors[1].slice();
 						//let yProgress = 0;
@@ -1192,7 +1196,12 @@
 
 					return createRectImage(rectSize, rectSize, populateImageData);
 				};
-				const updateGradientData = (tiles) => {
+				
+				let gradientUpdateRunning = false;
+				let gradientUpdateStopRequested = false;
+				const updateGradientData = async (tiles) => {
+					gradientUpdateRunning = true;
+
 					let updateImageOfTile = tile => {
 						const initialPosition = tile.initialPosition;
 						const continuous = config.style.gradient === "continuous";
@@ -1201,15 +1210,15 @@
 							.catch(e => { })
 					};
 					//return Promise.all(tiles.map(updateImageOfTile));
-				
-					let prevPromise = Promise.resolve();
+					
 					for (let a = 0; a < tiles.length; a++){
-						prevPromise = prevPromise.then(() => {
-							requestRender();
-							return updateImageOfTile(tiles[a]);
-						});
+						if (gradientUpdateStopRequested){
+							break;
+						}
+						await updateImageOfTile(tiles[a]);
+						requestRender();
 					}
-					return prevPromise;
+					gradientUpdateRunning = false;
 				};
 				/*const updateGradientData = (tiles) => {
 					const getColorVector = (from, to) => {
@@ -1221,29 +1230,59 @@
 					const horizontalInitialStride = getColorVector(cornerColors[0], cornerColors[1]);
 
 				};*/
-
-
+				let gradientUpdateFinishedPromise = null;
 				const updateImageDataAndRepaint = () => {
 					if (["continuous", "discrete"].includes(config.style.gradient)) {
 						const tiles = getTiles();
-						//tiles.forEach(tile => tileGradientMap.set(tile, undefined));
-						updateGradientData(tiles).then(() => requestRender());
+						let continuationPromise = null;
+						if (gradientUpdateRunning){
+							gradientUpdateStopRequested = true;
+							continuationPromise = gradientUpdateFinishedPromise;
+						}
+						else {
+							continuationPromise = Promise.resolve();
+						}
+						continuationPromise
+						.then(() => {
+							gradientUpdateStopRequested = false;
+							gradientUpdateFinishedPromise = updateGradientData(tiles);
+							return gradientUpdateFinishedPromise;
+						})
+						.then(() => requestRender());
 					}
 				};
 				
 				let imageUpdateBatcher = new RequestBatcher(() => updateImageDataAndRepaint());
 				const requestImageUpdate = () => imageUpdateBatcher.request();
 
-				//update on events ###
-				canvas.addEventListener("resized", requestImageUpdate);
-				torusSpace.addEventListener("pointCountChanged", requestImageUpdate);
-				app.addEventListener("gradientConfigChanged", requestImageUpdate);
-				app.addEventListener("gameStateChanged", e => {
-					if (e.detail.transition === "restart"){
-						randomizeColors();
-						requestImageUpdate();
+				//connect to events ###
+				{
+					//canvas resize
+					{
+						//avoid triggering update if the canvas size is animated
+						//if it appears to be done animating -> update gradient
+						const minResizeDeltaTime = 100;
+						let lastCanvasResizeTime = -1;
+						const onCanvasResized = () => {
+							const curCanvasResizeTime = performance.now();
+							const deltaTime = curCanvasResizeTime - lastCanvasResizeTime;
+							if (deltaTime > 50 || lastCanvasResizeTime < 0){
+								requestImageUpdate();
+							}
+							lastCanvasResizeTime = curCanvasResizeTime;
+						};
+						canvas.addEventListener("resized", onCanvasResized);
 					}
-				});
+
+					torusSpace.addEventListener("pointCountChanged", requestImageUpdate);
+					app.addEventListener("gradientConfigChanged", requestImageUpdate);
+					app.addEventListener("gameStateChanged", e => {
+						if (e.detail.transition === "restart"){
+							randomizeColors();
+							requestImageUpdate();
+						}
+					});
+				}
 			}
 			
 			//rendering ###
@@ -1388,23 +1427,25 @@
 						tileImageAlphaMap = null;
 					}
 				};
+				
+				
+				//play wave animation when solves
+				app.addEventListener("gameStateChanged", e => {
+					if (app.gameState === "finished"){
+						const dragger = getCurrentDragger();
+						if (!dragger){
+							return;
+						}
+						let currentMousePoint = dragger.currentMousePoint;
+						if (!currentMousePoint){
+							return;
+						}
+						const torusPoint = currentMousePoint.multiply(1 / tileSize);
+						makeCoordinateValidOnTorus(torusPoint);
+						playWaveAnimation(torusPoint);
+					}
+				});
 			}
-			//play wave animation when finished
-			app.addEventListener("gameStateChanged", e => {
-				if (app.gameState === "finished"){
-					const dragger = getCurrentDragger();
-					if (!dragger){
-						return;
-					}
-					let currentMousePoint = dragger.currentMousePoint;
-					if (!currentMousePoint){
-						return;
-					}
-					const torusPoint = currentMousePoint.multiply(1 / tileSize);
-					makeCoordinateValidOnTorus(torusPoint);
-					playWaveAnimation(torusPoint);
-				}
-			});
 		}
 
 		//shape: "disc" ###
