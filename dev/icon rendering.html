@@ -1,0 +1,87 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+</head>
+
+<body>
+
+	<script src="../js/MathUtil.js"></script>
+	<script src="../js/CtxUtil.js"></script>
+
+	<canvas width="1024" height="1024" style="border: 2px solid black;"></canvas>
+
+	<!-- game -->
+	<script>
+		{
+			//canvas, canvas sizing, ctx ###
+			let canvas, ctx;
+			{
+				canvas = document.querySelector("canvas");
+				ctx = canvas.getContext("2d");
+			}
+
+			const divisionCount = 3;
+			const margin = 10;
+			const tileSize = canvas.width / divisionCount;
+			const innerTileSize = tileSize - (margin * 2);
+
+
+			lerpColors = (a, b, t) => a.map((c1, ind) => MathUtil.lerp(c1, b[ind], t));
+			const cornerColors = [
+				[50, 119, 229], [113, 242, 152], [169, 133, 242], [229, 121, 159]
+			];
+			const renderTileAt = (x, y, initialX, initialY) => {
+				ctx.save();
+				ctx.translate(x * tileSize, y * tileSize);
+				ctx.translate(margin, margin);
+				for (let y = 0; y < innerTileSize; y++){
+					for (let x = 0; x < innerTileSize; x++){
+						const canvasX = initialX * tileSize + margin + x;
+						const canvasY = initialY * tileSize + margin + y;
+						const normY = canvasY / canvas.height;
+						const normX = canvasX / canvas.width;
+						const leftPoint = lerpColors(cornerColors[0], cornerColors[2], normY);
+						const rightColor = lerpColors(cornerColors[1], cornerColors[3], normY);
+						const point = lerpColors(leftPoint, rightColor, normX).map(c => Math.round(c));
+						ctx.fillStyle = `rgb(${point.join(",")})`;
+						ctx.fillRect(x, y, 1, 1);
+					}
+				}
+				ctx.restore();
+			};
+
+			const render = () => {
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.save();
+
+				const bezierMargin = 25;
+				ctx.beginPath();
+				ctx.moveTo(canvas.width / 2, 0);
+				ctx.bezierCurveTo(canvas.width - bezierMargin, 0, canvas.width, bezierMargin, canvas.width, canvas.height / 2);
+				ctx.bezierCurveTo(canvas.width, canvas.height - bezierMargin, canvas.width - bezierMargin, canvas.height, canvas.width / 2, canvas.height);
+				ctx.bezierCurveTo(bezierMargin, canvas.height, 0, canvas.height - bezierMargin, 0, canvas.height / 2);
+				ctx.bezierCurveTo(0, bezierMargin, bezierMargin, 0, canvas.width / 2, 0);
+				ctx.closePath();
+				ctx.clip();
+
+
+				const middleRowOffset = 0.35;
+				for (let y = 0; y < divisionCount; y++){
+					for (let x = 0; x < divisionCount; x++){
+						renderTileAt(x + (y === 1 ? middleRowOffset : 0), y, x, y);
+					}
+				}
+				renderTileAt(-1 + middleRowOffset, 1, 2, 1);
+
+				ctx.restore();
+			};
+			render();
+		}
+	</script>
+
+
+</body>
+
+</html>

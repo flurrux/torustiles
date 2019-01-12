@@ -1,0 +1,25 @@
+﻿{
+	"dir": "ltr",
+	"lang": "en",
+	"name": "torustiles",
+	"scope": "/",
+	"display": "standalone",
+	"start_url": "https://nostalgic-keller-49ce6e.netlify.com/",
+	"short_name": "torustiles",
+	"theme_color": "transparent",
+	"description": "a small puzzle game. you might be tempted to call this a rubik's square but it's a torus.",
+	"orientation": "any",
+	"background_color": "transparent",
+	"icons": [
+		{
+			"src": "/icons/icon 192.png",
+			"type": "image/png",
+			"sizes": "192x192"
+		},
+		{
+			"src": "/icons/icon 512.png",
+			"type": "image/png",
+			"sizes": "512x512"
+		}
+	]
+}

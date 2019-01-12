@@ -6,13 +6,17 @@
 	<meta name="keywords" content="game,puzzle,loopover,torustiles">
 	<meta name="author" content="Christian Hoffmann">
 	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+	<link rel="manifest" href="pwa/manifest.json">
 </head>
 <body>
 
+<!-- pwa service worker -->
+<script src="pwa/service worker registration.js"></script>
+
 <!-- material design -->	
-<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-<link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.brown-deep_orange.min.css" />
-<script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+<link rel="stylesheet" href="libs/icon.css">
+<link rel="stylesheet" href="libs/material.brown-deep_orange.min.css" />
+<script defer src="libs/material.min.js"></script>
 
 <link rel="stylesheet" href="css/style.css" />
 
@@ -58,8 +62,8 @@
 	</div>
 	<div style="display: flex; justify-content: center;">
 		<div id="footer-links" style="width: auto;">
-			<a href="">contact</a>
-			·
+			<!--<a href="">contact</a>
+			·-->
 			<a href="https://www.youtube.com/watch?v=95rtiz-V2zM" target="_blank">inspiration</a>
 		</div>
 	</div>
@@ -169,6 +173,7 @@
 		width = Math.ceil(width);
 		height = Math.ceil(height);
 		const imageData = ctx.createImageData(width, height);
+
 		let counter = 0;
 		for (let y = 0; y < height; y++){
 			for (let x = 0; x < width; x++){
@@ -181,14 +186,16 @@
 		}
 		return imageData;
 	};
-	const createRectImage = (width, height, getPixelAt) => {
+	const createRectImage = (width, height, populateImageData) => {
 		width = Math.floor(width);
 		height = Math.floor(height);
 		const canvas = document.createElement("canvas");
 		canvas.width = width;
 		canvas.height = height;
 		const ctx = canvas.getContext("2d");
-		const imageData = createRectImageData(ctx, width, height, getPixelAt);
+		//const imageData = createRectImageData(ctx, width, height, getPixelAt);
+		const imageData = ctx.createImageData(width, height);
+		populateImageData(imageData);
 		ctx.putImageData(imageData, 0, 0);
 
 		let loadResolve = null;
@@ -351,6 +358,14 @@
 		});
 	}
 
+</script>
+
+<!-- game persistence -->
+<script>
+	{
+		const gameSaving = new EventTarget();
+		window.gameSaving = gameSaving;
+	}
 </script>
 
 <!-- game -->
@@ -920,9 +935,25 @@
 
 			//gradient
 			let tileGradientMap;
-			{
-				let getPixelAtNormalizedPoint, randomizeColors;
+			{	
+				//general gradient util
+				let lerpColors, getRandomCornerColorsByCircle;
 				{
+					lerpColors = (a, b, t) => a.map((c1, ind) => MathUtil.lerp(c1, b[ind], t));
+					const getRandomOrder = (size) => {
+						const order = [];
+						for (let a = 0; a < size; a++){
+							order[a] = a;
+						}
+						const randomOrder = [];
+						for (let a = 0; a < size; a++) {
+							const index = Math.floor(order.length * Math.random());
+							randomOrder.push(order[index]);
+							order.splice(index, 1);
+						}
+						return randomOrder;
+					};
+	
 					const getColorOnCircle = progress => {
 						const segments = [
 							["full", "up", "zero"], ["down", "full", "zero"], 
@@ -953,9 +984,9 @@
 					const darkenColor = (color, progress) => {
 						return color.map(c => MathUtil.lerp(c, 0, progress));
 					};
-					const getRandomCornerColorsByCircle = () => {
+					getRandomCornerColorsByCircle = () => {
 						const circleOrigin = Math.random();
-						let cornerColors = [0, 1, 2, 3].map(c => {
+						let cornerColors = getRandomOrder(4).map(c => {
 							let circlePosition = circleOrigin + c * 0.25 + MathUtil.lerp(-0.07, 0.07, Math.random());
 							circlePosition = MathUtil.loopNum(0, 1, circlePosition);
 							return getColorOnCircle(circlePosition);
@@ -969,7 +1000,7 @@
 						return cornerColors;
 					};
 
-					const getRandomCornerColors = () => {
+					const getRandomCornerColorsInCube = () => {
 						const padding = 20;
 						const min = padding;
 						const max = 255 - padding;
@@ -977,7 +1008,7 @@
 						const cornerColors = [0, 1, 2, 3].map(index => {
 							return [getRandomVal(), getRandomVal(), getRandomVal()]
 						});
-
+	
 						//push them apart if they are too close
 						const scatterIterations = 10;
 						for (let a = 0; a < scatterIterations; a++) {
@@ -1009,12 +1040,32 @@
 								});
 							});
 						}
-
+	
 						return cornerColors;
 					};
+				}
 
+				let getColorVector, scaleColorVector, getColorVectorScaled, addToColorVector;
+				{
+					getColorVector = (from, to) => {
+						return to.map((toComponent, index) => toComponent - from[index]);
+					};
+					scaleColorVector = (vec, scale) => {
+						vec.forEach((component, index) => vec[index] = component * scale);
+					};
+					getColorVectorScaled = (vec, scale) => {
+						const scaled = vec.slice();
+						scaleColorVector(scaled, scale);
+						return scaled;
+					};
+					addToColorVector = (a, b) => {
+						a.forEach((component, index) => a[index] = component + b[index]);
+					};
+				}
 
-
+				//specific gradients, gradient state ###
+				let getColorInsideCorners, randomizeColors, getPixelAtNormalizedPoint;
+				{
 					let cornerColors;
 					//cornerColors = [
 					//	[117, 166, 244, 255], [159, 117, 244, 255], [172, 229, 126, 255], [229, 168, 126, 255]
@@ -1022,40 +1073,124 @@
 					//cornerColors = [0, 1, 2, 3].map(ind => {
 					//	return [Math.random() * 255, Math.random() * 255, Math.random() * 255, 255];
 					//});
-
-					randomizeColors = () => cornerColors = getRandomCornerColorsByCircle();	
-
-
-					const lerpColors = (a, b, t) => a.map((c1, ind) => MathUtil.lerp(c1, b[ind], t));
+					getColorInsideCorners = (normalizedX, normalizedY) => {
+						const leftColor = lerpColors(cornerColors[0], cornerColors[2], normalizedY);
+						const rightColor = lerpColors(cornerColors[1], cornerColors[3], normalizedY);
+						return lerpColors(leftColor, rightColor, normalizedX);
+					};
+					randomizeColors = () => {
+						cornerColors = getRandomCornerColorsByCircle();
+					};
+	
 					getPixelAtNormalizedPoint = (x, y) => {
 						//return [
 						//	Math.floor(x * 255), Math.floor(y * 255), 50, 255
 						//];
-
+	
 						const leftColor = lerpColors(cornerColors[0], cornerColors[2], y);
 						const rightColor = lerpColors(cornerColors[1], cornerColors[3], y);
 						const color = lerpColors(leftColor, rightColor, x);
 						return color;
 					};
+
+					//corner colors persistence
+					{
+						gameSaving.addEventListener("beforeGameSaved", e => {
+							e.detail.savedGame.cornerColors = cornerColors;
+						});
+						gameSaving.addEventListener("afterSaveGameLoaded", e => {
+							const savedGame = e.detail.savedGame;
+							if (savedGame.cornerColors !== undefined){
+								cornerColors = savedGame.cornerColors;
+							}
+						});
+					}
 				}
-				
-				
+				randomizeColors();
+
+				//window.populateImageDataTimes = [];
+
 				tileGradientMap = new WeakMap();
 				const createRectGradientImage = (startX, startY, continuous) => {
 					const rectSize = Math.floor(tileSize * getCanvasPixelRatio());
 					if (rectSize === 0){
 						return Promise.reject("an image can not have a size of 0");
 					}
-					const getPixelAt = (x, y) => {
-						let pixelX = (startX * rectSize);
-						let pixelY = (startY * rectSize);
-						if (continuous) {
-							pixelX += x;
-							pixelY += y;
+
+					//const getPixelAt = (x, y) => {
+					//	let pixelX = (startX * rectSize);
+					//	let pixelY = (startY * rectSize);
+					//	if (continuous) {
+					//		pixelX += x;
+					//		pixelY += y;
+					//	}
+					//	return getPixelAtNormalizedPoint(pixelX / canvas.width, pixelY / canvas.height);
+					//};
+
+					const populateImageData = imageData => {
+						//const startTime = performance.now();
+						
+						const width = imageData.width;
+						const height = imageData.height;
+						
+						const cornerColors = [
+							getColorInsideCorners(startX / getWidth(), startY / getHeight()),
+							getColorInsideCorners((startX + 1) / getWidth(), startY / getHeight()),
+							getColorInsideCorners(startX / getWidth(), (startY + 1) / getHeight()),
+							getColorInsideCorners((startX + 1) / getWidth(), (startY + 1) / getHeight())
+						];
+						
+						const leftDownVector = getColorVector(cornerColors[0], cornerColors[2]);
+						const rightDownVector = getColorVector(cornerColors[1], cornerColors[3]);
+						const initialHorizontalVector = getColorVector(cornerColors[0], cornerColors[1]);
+						const horizontalVelocityVector = getColorVector(leftDownVector, rightDownVector);
+						const horizontalVelocityStride = getColorVectorScaled(horizontalVelocityVector, 1 / height);
+						
+						const horizontalProgressStride = 1 / (width - 1);
+						const verticalProgressStride = 1 / (height - 1);
+						const leftDownStride = getColorVectorScaled(leftDownVector, verticalProgressStride);
+						//const rightDownStride = getColorVectorScaled(rightDownVector, verticalProgressStride);
+						
+						let currentLeftPoint = cornerColors[0].slice();
+						let currentHorizontalVector = initialHorizontalVector.slice();
+						
+						//const leftColor = cornerColors[0].slice();
+						//const rightColor = cornerColors[1].slice();
+						//let yProgress = 0;
+
+						const colArray = imageData.data;
+						let curColor = [0, 0, 0];
+						let counter = 0;
+						for (let y = 0; y < height; y++){
+							//const leftColor = lerpColors(cornerColors[0], cornerColors[2], yProgress);
+							//const rightColor = lerpColors(cornerColors[1], cornerColors[3], yProgress);
+							//const horizontalStride = rightColor.map((c, ind) => (c - leftColor[ind]) / width);
+							//let curColor = leftColor.slice();
+							
+							curColor.forEach((component, index) => curColor[index] = currentLeftPoint[index]);
+							const currentHorizontalStride = getColorVectorScaled(currentHorizontalVector, 1 / width);
+
+							let xProgress = 0;
+							for (let x = 0; x < width; x++){
+								//curColor = lerpColors(leftColor, rightColor, xProgress);
+								addToColorVector(curColor, currentHorizontalStride);
+								colArray[counter] = Math.round(curColor[0]);
+								colArray[counter + 1] = Math.round(curColor[1]);
+								colArray[counter + 2] = Math.round(curColor[2]);
+								colArray[counter + 3] = 255;
+								counter += 4;
+								//xProgress += horizontalProgressStride;
+							}
+							addToColorVector(currentLeftPoint, leftDownStride);
+							addToColorVector(currentHorizontalVector, horizontalVelocityStride);
+							//yProgress += verticalProgressStride;
+							//addToColorVector(leftColor, leftDownStride);
+							//addToColorVector(rightColor, rightDownStride);
 						}
-						return getPixelAtNormalizedPoint(pixelX / canvas.width, pixelY / canvas.height);
+						//populateImageDataTimes.push(performance.now() - startTime);
 					};
-					return createRectImage(rectSize, rectSize, getPixelAt);
+
+					return createRectImage(rectSize, rectSize, populateImageData);
 				};
 				const updateGradientData = (tiles) => {
 					let updateImageOfTile = tile => {
@@ -1076,9 +1211,20 @@
 					}
 					return prevPromise;
 				};
+				/*const updateGradientData = (tiles) => {
+					const getColorVector = (from, to) => {
+						return to.map((toComponent, index) => from[index] - toComponent);
+					};
+					const leftSideTotalStride = getColorVector(cornerColors[0], cornerColors[2]);
+					const rightSideTotalStride = getColorVector(cornerColors[1], cornerColors[3]);
+					const horizontalStrideChange = getColorVector(leftSideTotalStride, rightSideTotalStride);
+					const horizontalInitialStride = getColorVector(cornerColors[0], cornerColors[1]);
+
+				};*/
+
+
 				const updateImageDataAndRepaint = () => {
 					if (["continuous", "discrete"].includes(config.style.gradient)) {
-						randomizeColors();
 						const tiles = getTiles();
 						//tiles.forEach(tile => tileGradientMap.set(tile, undefined));
 						updateGradientData(tiles).then(() => requestRender());
@@ -1088,11 +1234,13 @@
 				let imageUpdateBatcher = new RequestBatcher(() => updateImageDataAndRepaint());
 				const requestImageUpdate = () => imageUpdateBatcher.request();
 
+				//update on events ###
 				canvas.addEventListener("resized", requestImageUpdate);
 				torusSpace.addEventListener("pointCountChanged", requestImageUpdate);
 				app.addEventListener("gradientConfigChanged", requestImageUpdate);
 				app.addEventListener("gameStateChanged", e => {
 					if (e.detail.transition === "restart"){
+						randomizeColors();
 						requestImageUpdate();
 					}
 				});
@@ -2305,6 +2453,8 @@
 			let loaded = localStorage.getItem(savedGameKey);
 			if (loaded) {
 				loaded = JSON.parse(loaded);
+				gameSaving.dispatchEvent(new CustomEvent("afterSaveGameLoaded", { detail: { savedGame: { ...loaded } } }));
+
 				if (loaded.tilePositions){
 					const tilePositions = loaded.tilePositions.map(pos => new Vector2D(pos.x, pos.y));
 					tileLayer.setTilePositions(tilePositions);
@@ -2334,6 +2484,7 @@
 				elapsedTime: gameTimer.elapsedTime,
 				gameState: app.gameState
 			};
+			gameSaving.dispatchEvent(new CustomEvent("beforeGameSaved", { detail: { savedGame: savedGame } }));
 			localStorage.setItem(savedGameKey, JSON.stringify(savedGame));
 		};
 

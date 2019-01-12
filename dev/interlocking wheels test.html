@@ -1,0 +1,134 @@
+﻿<html>
+<body>
+<script>
+
+	class InterlockingWheels {
+		constructor(wheel1Size, wheel2Size){
+			this.wheel1Size = wheel1Size;
+			this.wheel2Size = wheel2Size;
+			this.cogs = [];
+			const combinedSize = wheel1Size + wheel2Size - 1;
+			for (let a = 0; a < combinedSize; a++){
+				this.cogs[a] = a;
+			}
+		}
+		moveWheel(firstWheel, clockwise){
+			const sliceEndIndex = firstWheel ? this.wheel1Size : this.wheel1Size - 1;
+			const wheel1Cogs = this.cogs.slice(0, sliceEndIndex);
+			const wheel2Cogs = this.cogs.slice(sliceEndIndex);
+			const movedItemsArray = firstWheel ? wheel1Cogs : wheel2Cogs;
+			const numberOfMovedItems = movedItemsArray.length;
+			const stride = clockwise ? 1 : -1;
+			const startIndex = clockwise ? 0 : numberOfMovedItems - 1;
+			const endIndex = clockwise ? numberOfMovedItems - 1 : 0;
+			const transformedArray = [];
+			for (let a = 0; a < numberOfMovedItems - 1; a++){
+				const curIndex = startIndex + stride * a;
+				transformedArray[curIndex + stride] = movedItemsArray[curIndex]
+			}
+			transformedArray[startIndex] = movedItemsArray[endIndex];
+			this.cogs = firstWheel ? transformedArray.concat(wheel2Cogs) : wheel1Cogs.concat(transformedArray);
+			return this.cogs;
+		}
+	}
+
+	const getAllPermutationsOfArray = array => {
+		let permutationArrays = [
+			[array[0]]
+		];
+		for (let a = 1; a < array.length; a++){
+			const addedItem = array[a];
+			const prevPermutationArrays = permutationArrays.slice();
+			const nextPermutationArrays = [];
+			for (let b = 0; b <= a; b++){
+				for (let c = 0; c < prevPermutationArrays.length; c++){
+					const arrayWithInserted = prevPermutationArrays[c].slice();
+					arrayWithInserted.splice(b, 0, addedItem);
+					nextPermutationArrays.push(arrayWithInserted);
+				}
+			}
+			permutationArrays = nextPermutationArrays;
+		}
+		return permutationArrays;
+	};
+
+	const getInterlockingWheelPermutations = (wheel, numberOfMoves) => {
+		let permutations = [wheel.cogs.slice()];
+		for (let d = 0; d < 2; d++){
+			let firstWheel = d === 0;
+			for (let a = 0; a < numberOfMoves; a++){
+				const prevPermutations = permutations.slice();
+				const nextPermutations = [];
+				for (let b = 0; b < prevPermutations.length; b++){
+					for (let c = 0; c < 2; c++){
+						wheel.cogs = prevPermutations[b].slice();
+						wheel.moveWheel(firstWheel, c == 0);
+						nextPermutations.push(wheel.cogs.slice());
+					}
+				}
+				permutations = nextPermutations;
+				firstWheel = !firstWheel;
+			}
+		}
+		return permutations;
+	};
+
+	const faculty = num => {
+		let product = 1;
+		for (let a = 2; a <= num; a++){
+			product *= a;
+		}
+		return product;
+	};
+
+	const getWheelPermutationsWithoutDuplicates = permutations => {
+		const areArraysEqual = (arr1, arr2) => {
+			if (arr1.length !== arr2.length){
+				return false;
+			}
+			for (let a = 0; a < arr1.length; a++){
+				if (arr1[a] !== arr2[a]){
+					return false;
+				}
+			}
+			return true;
+		};
+
+		const withoutDuplicates = [];
+		let prevArray = permutations.slice();
+		for (let a = 0; a < 10000; a++){
+			const nextArray = [];
+			for (let b = 1; b < prevArray.length; b++){
+				if (!areArraysEqual(prevArray[0], prevArray[b])){
+					nextArray.push(prevArray[b]);
+				}
+			}
+			withoutDuplicates.push(prevArray[0]);
+			if (nextArray.length === 0){
+				break;
+			}
+			prevArray = nextArray;
+		}
+		return withoutDuplicates;
+	};
+
+	const sortWheelPermutationArrays = permutations => {
+		const compareFunc = (arr1, arr2) => {
+			for (let a = 0; a < arr1.length; a++){
+				if (arr1[a] !== arr2[a]){
+					return arr1[a] - arr2[a];
+				}
+			}
+		};
+		permutations.sort(compareFunc);
+	};
+
+	const wheels = new InterlockingWheels(4, 4);
+	let wheelPermutations = getInterlockingWheelPermutations(wheels, 8);
+	wheelPermutations = getWheelPermutationsWithoutDuplicates(wheelPermutations);
+	sortWheelPermutationArrays(wheelPermutations);
+	console.log(wheelPermutations);
+
+</script>	
+</body>	
+</html>

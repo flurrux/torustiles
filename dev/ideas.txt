@@ -1,12 +1,13 @@
 ﻿ideas and todo:
-- icon: 3x3 field with the horizontal middle row slightly shifted
-- explore gradients, option for random gradient everytime
-- contact email or some page 
+
 - implement pwa
+- performance of gradient creation
+- when device is rotated, it scales down smoothly which triggers the gradient creation every frame and slows the framerate down massively
 
 
 
 nice to have: 
+- contact email or some page 
 - improve circular reveal, connect settings-button-color-change-duration to circular reveal duration
 - low poly torus as icon
 - feedback for initial scramble
@@ -20,6 +21,9 @@ in landscape mode, move the controls and settings of to the sides
 - auto-solve
 
 done:
+- icon: 3x3 field with the horizontal middle row slightly shifted (Y)
+- persist gradient (Y)
+- explore gradients, option for random gradient everytime (Y)
 - change top bar background color when game finished (Y)
 - prevent multitouch (Y)
 - feedback for when puzzle is completely solved, 
