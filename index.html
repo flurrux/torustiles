@@ -1260,16 +1260,17 @@
 					//canvas resize
 					{
 						//avoid triggering update if the canvas size is animated
-						//if it appears to be done animating -> update gradient
+						let timeoutId = -1;
+						const requestImageUpdateAfterTimeout = () => {
+							timeoutId = -1;
+							requestImageUpdate();
+						};
 						const minResizeDeltaTime = 100;
-						let lastCanvasResizeTime = -1;
 						const onCanvasResized = () => {
-							const curCanvasResizeTime = performance.now();
-							const deltaTime = curCanvasResizeTime - lastCanvasResizeTime;
-							if (deltaTime > 50 || lastCanvasResizeTime < 0){
-								requestImageUpdate();
+							if (timeoutId !== -1){
+								window.clearTimeout(timeoutId);
 							}
-							lastCanvasResizeTime = curCanvasResizeTime;
+							timeoutId = window.setTimeout(requestImageUpdateAfterTimeout, minResizeDeltaTime);
 						};
 						canvas.addEventListener("resized", onCanvasResized);
 					}
