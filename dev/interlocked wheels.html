@@ -2,30 +2,24 @@
 <html>
 <head>
 	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+	<style>
+		body {
+			/*background-color: black;*/
+		}	
+	</style>	
 </head>
 <body>
 
-<script src="MathUtil.js"></script>
-<script src="Vector2D.js"></script>
-<script src="DragHelper.js"></script>
-<script src="CtxUtil.js"></script>
+<script src="../libs/Animation.js"></script>
+<script src="../libs/MathUtil.js"></script>
+<script src="../libs/Vector2D.js"></script>
+<script src="../libs/DragHelper.js"></script>
+<script src="../libs/CtxUtil.js"></script>
 
-<canvas width="1000" height="700" style="border: 2px solid black;"></canvas>
+<canvas width="600" height="500" style="border: 2px solid black;"></canvas>
 
 <!-- general util -->
 <script>
-
-	const getPixelRatio = (ctx) => {
-		const dpr = window.devicePixelRatio || 1;
-		const bsr = 
-			ctx.webkitBackingStorePixelRatio ||
-			ctx.mozBackingStorePixelRatio ||
-			ctx.msBackingStorePixelRatio ||
-			ctx.oBackingStorePixelRatio ||
-			ctx.backingStorePixelRatio || 1;
-
-		return dpr / bsr;
-	};
 
 	const getRandomRgbStyle = () => {
 		return `rgb(${[0, 1, 2].map(index => Math.floor(Math.random() * 255)).join(",")})`;
@@ -44,6 +38,8 @@
 			let canvasPixelRatio = 1;
 			getCanvasPixelRatio = () => canvasPixelRatio;
 		}
+
+		const loopNum = MathUtil.loopNum;
 
 		const WheelPoint = class {
 			constructor(wheel, index, label, fillStyle){
@@ -70,33 +66,35 @@
 				const totalAngle = this.fixedRotation + (this.pointRotations + pointIndex + this._transitionRotation) * this.anglePerSegment;
 				return this.position.plus(new Vector2D(Math.sin(totalAngle), Math.cos(totalAngle)).scale(this.radius));
 			}
+			getPointAtRotatedIndex(rotatedIndex){
+				return this.points.find(point => point.wheelIndex === rotatedIndex);
+			}
+			getPointAtFixedIndex(fixedIndex){
+				return this.points.find(point => this.getFixedIndexOfRotatedIndex(point.wheelIndex) === fixedIndex);
+			}
+			getFixedIndexOfRotatedIndex(rotatedIndex){
+				return loopNum(0, this.pointCount, rotatedIndex + this.pointRotations);
+			}
+			getRotatedIndexOfFixedIndex(fixedIndex){
+				return loopNum(0, this.pointCount, fixedIndex - this.pointRotations);
+			}
 			get points(){
 				return wheelPoints.filter(point => point.wheel === this);
 			}
 			get intersections(){
-				return wheelIntersections.filter(intersection => intersection.getWheelPointOf(this) !== undefined);
+				return wheelIntersections.filter(intersection => intersection.getIntersectionLocationOfWheel(this) !== undefined);
 			}
 			get anglePerSegment(){
 				return (Math.PI * 2) / (this.pointCount);
 			}
 			rotate(deltaPointAngle){
 				if (this._rotationPhase === "not rotating"){
-					const intersections = this.intersections;
-					for (let intersection of intersections){
-						const otherWheelPoints = intersection.getOtherWheelPoints(this);
-						const point = wheelPoints.find(point => {
-							for (let otherWheelPoint of otherWheelPoints){
-								if (point.wheel === otherWheelPoint.wheel && 
-									(point.wheelIndex + point.wheel.pointRotations) === otherWheelPoint.wheelIndex){
-									return true;
-								}
-							}
-							return false;
-						});
-						if (point){
-							const ownWheelPoint = intersection.getWheelPointOf(this);
+					for (let intersection of this.intersections){
+						const point = intersection.getWheelPoint();
+						if (point.wheel !== this){
+							const secLocation = intersection.getIntersectionLocationOfWheel(this);
 							point.wheel = this;
-							point.wheelIndex = ownWheelPoint.wheelIndex - this.pointRotations;
+							point.wheelIndex = this.getRotatedIndexOfFixedIndex(secLocation.wheelIndex);
 						}
 					}
 					this._rotationPhase = "rotating";
@@ -109,7 +107,6 @@
 						this._transitionRotation = this._transitionRotation - roundedTransitionRotation;
 					}
 				}
-				console.log(this.pointRotations, this._transitionRotation);
 				render();
 			}
 			stopRotation(){
@@ -118,33 +115,43 @@
 				render();
 			}
 		}
-		const WheelIntersectionPoint = class {
+		const WheelIntersectionLocation = class {
 			constructor(wheel, wheelIndex){
 				this.wheel = wheel;
 				this.wheelIndex = wheelIndex;
 			}
 		}
 		const WheelIntersection = class {
-			constructor(intersectionPoints){
-				this.intersectionPoints = intersectionPoints;
+			constructor(intersectionLocations){
+				this.intersectionLocations = intersectionLocations;
 			}
 			includesWheel(wheel){
 				return this.getDataOfWheel(wheel) !== undefined;
 			}
-			getDataOfWheel(wheel){
-				return this.intersectionPoints.find(entry => entry.wheel === wheel);
+			getIntersectionLocationOfWheel(wheel){
+				return this.intersectionLocations.find(entry => entry.wheel === wheel);
 			}
-			getOtherWheelPoints(wheel){
-				return this.intersectionPoints.filter(entry => entry.wheel !== wheel);
+			getOtherWheelIntersectionLocations(wheel){
+				return this.intersectionLocations.filter(entry => entry.wheel !== wheel);
 			}
-			getWheelPointOf(wheel){
-				return this.intersectionPoints.find(entry => entry.wheel === wheel);
+			getWheelPointIndex(){
+				return wheelPoints.findIndex(point => {
+					return this.intersectionLocations.some(sec => {
+						if (sec.wheel === point.wheel){
+							return sec.wheel.getFixedIndexOfRotatedIndex(point.wheelIndex) === sec.wheelIndex;
+						}
+						return false;
+					});
+				});
+			}
+			getWheelPoint(){
+				return wheelPoints[this.getWheelPointIndex()];
 			}
 		}
 
 		const alignWheelAtIntersectionPoint = (wheel, intersection, tiltAngle) => {
-			const wheelEntry = intersection.intersectionPoints.find(entry => entry.wheel === wheel);
-			const otherWheelEntry = intersection.intersectionPoints.find(entry => entry.wheel !== wheel);
+			const wheelEntry = intersection.intersectionLocations.find(entry => entry.wheel === wheel);
+			const otherWheelEntry = intersection.intersectionLocations.find(entry => entry.wheel !== wheel);
 			const otherWheel = otherWheelEntry.wheel;
 			
 			const otherWheelPosition = otherWheel.position;
@@ -165,39 +172,197 @@
 		};
 
 		const wheels = [];
+		window.wheels = wheels;
 		const wheelIntersections = [];
 		const wheelPoints = [];
+		const getWheelPointsLengthString = () => wheelPoints.length.toString();
 
-
-
-		const wheel1 = new Wheel(new Vector2D(canvas.width * 0.5, canvas.height * 0.5), 150, 6);
-		wheel1.fixedRotation = 0.7;
-		wheels.push(wheel1);
-		window.wheel1 = wheel1;
-		for (let a = 0; a < wheel1.pointCount; a++){
-			const point = new WheelPoint(wheel1, a, (wheelPoints.length).toString(), getRandomRgbStyle());
-			wheelPoints.push(point);
-		}
 		
-		const wheel2 = new Wheel(new Vector2D(0, 0), 80, 5);
-		wheels.push(wheel2);
-		window.wheel2 = wheel2;
-
-		const intersectionWheel1Wheel2 = new WheelIntersection([
-			new WheelIntersectionPoint(wheel1, 3), new WheelIntersectionPoint(wheel2, 2)
-		]);
-		wheelIntersections.push(intersectionWheel1Wheel2);
-		alignWheelAtIntersectionPoint(wheel2, intersectionWheel1Wheel2, 0.2);
-
-		for (let a = 0; a < wheel2.pointCount; a++) {
-			if (a === intersectionWheel1Wheel2.intersectionPoints[1].wheelIndex){
-				continue;
+		{
+			const wheel1 = new Wheel(new Vector2D(canvas.width * 0.6, canvas.height * 0.6), 150, 6);
+			wheel1.fixedRotation = 0.7;
+			wheels.push(wheel1);
+			window.wheel1 = wheel1;
+			for (let a = 0; a < wheel1.pointCount; a++){
+				const point = new WheelPoint(wheel1, a, (wheelPoints.length).toString(), getRandomRgbStyle());
+				wheelPoints.push(point);
 			}
-			const point = new WheelPoint(wheel2, a, (wheelPoints.length).toString(), getRandomRgbStyle());
-			wheelPoints.push(point);
+			
+			const wheel2 = new Wheel(new Vector2D(0, 0), 80, 5);
+			wheels.push(wheel2);
+			window.wheel2 = wheel2;
+
+			const intersectionWheel1Wheel2 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel1, 3), new WheelIntersectionLocation(wheel2, 2)
+			]);
+			wheelIntersections.push(intersectionWheel1Wheel2);
+			alignWheelAtIntersectionPoint(wheel2, intersectionWheel1Wheel2, 0.2);
+
+			for (let a = 0; a < wheel2.pointCount; a++) {
+				if (a === intersectionWheel1Wheel2.intersectionLocations[1].wheelIndex){
+					continue;
+				}
+				const point = new WheelPoint(wheel2, a, (wheelPoints.length).toString(), getRandomRgbStyle());
+				wheelPoints.push(point);
+			}
 		}
 		
+
+		//triangular
+		/*{
+			const sideLength = 180;
+			const segmentsPerSixth = 3;
+			const pointCount = 6 * segmentsPerSixth;
+			const cornerAngle = Math.PI / 3;
+			const halfCornerAngle = cornerAngle / 2;
+			const anglePerSegment = (Math.PI * 2) / pointCount;
+			const segmentsInnerTriangle = 1;
+			const targetOverlapAngle = cornerAngle + segmentsInnerTriangle * anglePerSegment;
+			const radius = -sideLength / (2 * Math.cos(0.5 * targetOverlapAngle));
+			//this needs to be uneven
+			const pointsPerOverlap = 2 + (segmentsPerSixth - 1) + segmentsInnerTriangle;
+			const halfPointsPerOverlap = (pointsPerOverlap - 1) / 2;
+			const pointsPerNonOverlap = pointCount - pointsPerOverlap + 2;
+
+			const triangleHeight = Math.sqrt(sideLength**2 * 0.75);	
+			const bottomY = canvas.height / 2 - triangleHeight * (1 / 3);
+			const topY = canvas.height / 2 + triangleHeight * (2 / 3);
+			const leftX = canvas.width / 2 - sideLength / 2;
+			const rightX = canvas.width / 2 + sideLength / 2;
+			
+			const wheel1 = new Wheel(new Vector2D(leftX, bottomY), radius, pointCount);
+			wheel1.fixedRotation = -(Math.PI / 2 + cornerAngle);
+			wheels.push(wheel1);
+			for (let a = 0; a < wheel1.pointCount; a++){
+				const color = `rgb(${Math.floor((a / wheel1.pointCount) * 255)}, 0, 0)`;
+				const point = new WheelPoint(wheel1, a, getWheelPointsLengthString(), color);
+				wheelPoints.push(point);
+			}
+			
+			const wheel2 = new Wheel(new Vector2D(rightX, bottomY), radius, pointCount);
+			wheel2.fixedRotation = Math.PI / 2 + cornerAngle;
+			wheels.push(wheel2);
+			for (let a = 0; a < wheel2.pointCount; a++){
+				const color = `rgb(0, ${Math.floor((a / wheel1.pointCount) * 255)}, 0)`;
+				const point = new WheelPoint(wheel2, a, getWheelPointsLengthString(), color);
+				wheelPoints.push(point);
+			}
+			
+			const wheel3 = new Wheel(new Vector2D(canvas.width / 2, topY), radius, pointCount);
+			wheel3.fixedRotation = segmentsInnerTriangle % 2 === 0 ? 0 : anglePerSegment / 2;
+			wheels.push(wheel3);
+			for (let a = 0; a < wheel3.pointCount; a++){
+				const color = `rgb(0, 0, ${Math.floor((a / wheel1.pointCount) * 255)})`;
+				const point = new WheelPoint(wheel3, a, getWheelPointsLengthString(), color);
+				wheelPoints.push(point);
+			}
+			
+			//merge colors
+			for (let intersection of wheelIntersections){
+				const wheelPoint = intersection.getWheelPoint();
+				const wheels = intersection.intersectionLocations.map(sec => sec.wheel);
+			}
+
+			//intersections ###
+			const intersection1Wheel1Wheel3 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel1, (pointsPerOverlap - 1) / 2), 
+				new WheelIntersectionLocation(wheel3, wheel3.pointCount - Math.ceil(segmentsInnerTriangle / 2))
+			]);
+			wheelIntersections.push(intersection1Wheel1Wheel3);
+			
+			const intersection2Wheel1Wheel3 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel1, wheel1.pointCount - (pointsPerOverlap - 1) / 2), 
+				new WheelIntersectionLocation(wheel3, wheel3.pointCount - Math.ceil(segmentsInnerTriangle / 2) - pointsPerNonOverlap + 1)
+			]);
+			wheelIntersections.push(intersection2Wheel1Wheel3);
+			
+			const intersection1Wheel2Wheel3 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel2, (pointsPerOverlap - 1) / 2), 
+				new WheelIntersectionLocation(wheel3, Math.floor(segmentsInnerTriangle / 2) + pointsPerNonOverlap - 1)
+			]);
+			wheelIntersections.push(intersection1Wheel2Wheel3);
+
+			const intersection2Wheel2Wheel3 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel2, pointCount - (pointsPerOverlap - 1) / 2), 
+				new WheelIntersectionLocation(wheel3, Math.floor(segmentsInnerTriangle / 2))
+			]);
+			wheelIntersections.push(intersection2Wheel2Wheel3);
+			
+			const intersection1Wheel1Wheel2 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel1, halfPointsPerOverlap - segmentsInnerTriangle), 
+				new WheelIntersectionLocation(wheel2, pointCount - (halfPointsPerOverlap - segmentsInnerTriangle))
+			]);
+			wheelIntersections.push(intersection1Wheel1Wheel2);
+			
+			const intersection2Wheel1Wheel2 = new WheelIntersection([
+				new WheelIntersectionLocation(wheel1, halfPointsPerOverlap - segmentsInnerTriangle + pointsPerOverlap - 1), 
+				new WheelIntersectionLocation(wheel2, pointCount - (halfPointsPerOverlap - segmentsInnerTriangle + pointsPerOverlap - 1))
+			]);
+			wheelIntersections.push(intersection2Wheel1Wheel2);
+
+			for (let intersection of wheelIntersections){
+				const entry = intersection.intersectionLocations[0];
+				const pointIndex = intersection.getWheelPointIndex();
+				wheelPoints.splice(pointIndex, 1);
+			}
+		}*/
 		
+		//dragger
+		class WheelDragger extends DragHelper {
+			constructor(canvas){
+				super(canvas);
+			}
+			onDragStart(e){
+				console.log(e);
+			}
+			onDrag(e){
+
+			}
+			onDragEnd(e){
+
+			}
+		}
+
+
+		let activeWheelIndex = 0;
+		let activeWheel = wheels[activeWheelIndex];
+		const rotateActiveWheel = (amount) => {
+			let prevVal = 0;
+			new Animation(
+				500, 
+				val => {
+					val = easing.fastInSlowOut(val);
+					val = amount * val;
+					const deltaVal = val - prevVal;
+					activeWheel.rotate(deltaVal);
+					prevVal = val;
+				}, 
+				() => activeWheel.stopRotation()
+			).start();
+		};
+		class KeyboardControl {
+			constructor(){
+				this.keyDownListener = keydownEvent => {
+					const key = keydownEvent.key;
+					if (key === "w" || key === "s"){
+						activeWheelIndex += key === "w" ? 1 : -1;
+						activeWheel = wheels[loopNum(0, wheels.length, activeWheelIndex)];
+						render();
+					}
+
+					if (key === "a" || key === "d"){
+						rotateActiveWheel(key === "a" ? -1 : 1);
+					}
+				};
+			}
+			activate(){
+				document.addEventListener("keydown", this.keyDownListener);
+			}
+			deactivate(){
+				document.removeEventListener("keyup", this.keyDownListener);
+			}
+		}
+		new KeyboardControl().activate();
 
 		const render = () => {
 			ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -205,18 +370,21 @@
 			ctx.translate(0, canvas.height);
 			ctx.scale(1, -1);
 
+			ctx.fillStyle = "orange";
+			ctx.fillCircle(activeWheel.position.x, activeWheel.position.y, 10);
+
 			for (let point of wheelPoints){
 				ctx.save();
 				const pointPosition = point.vectorPosition;
 				ctx.translate(pointPosition.x, pointPosition.y);
 
 				ctx.fillStyle = point.fillStyle;
-				ctx.fillCircle(0, 0, 20);
+				ctx.fillCircle(0, 0, 10);
 				
 				ctx.textAlign = "center";
 				ctx.textBaseline = "middle";
 				ctx.fillStyle = "#e9f1ee";
-				ctx.font = "24px sans-serif";
+				ctx.font = "12px sans-serif";
 				ctx.scale(1, -1);
 				ctx.fillText(point.label, 0, 0);
 

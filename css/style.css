@@ -17,10 +17,10 @@ body {
 	overflow: hidden;
 }
 canvas {
-	border-width: 2px;
+	/*border-width: 2px;
 	border-color: #4a4848de;
-	border-style: solid;
-	border-radius: 3px;
+	border-style: solid;*/
+	border-radius: 4px;
 }
 #canvas-wrapper {
 	flex: 1;
